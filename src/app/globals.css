@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #f4f6f9;
+  --color-surface: #ffffff;
+  --color-line: #e3e8ef;
+  --color-ink: #0f172a;
+  --color-muted: #5b6678;
+  --color-accent: #3a5bd9;
+  --color-accent-strong: #2d47b0;
+  --color-sidebar: #111827;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+table.data {
+  @apply w-full border-collapse text-sm;
+}
+table.data th {
+  @apply sticky top-0 z-10 border-b border-line bg-canvas px-3 py-2 text-left text-xs font-semibold whitespace-nowrap text-muted;
+}
+table.data td {
+  @apply border-b border-line px-3 py-2 align-top whitespace-nowrap text-ink;
+}
+table.data tbody tr:hover td {
+  @apply bg-canvas/60;
+}
