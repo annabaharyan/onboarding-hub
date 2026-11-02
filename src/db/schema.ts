@@ -55,6 +55,7 @@ export const dataSource = pgEnum("data_source", [
   "jira",
   "claude",
   "system",
+  "google_forms",
 ]);
 
 export const syncStatus = pgEnum("sync_status", [
@@ -303,6 +304,23 @@ export const orgUnits = pgTable(
   (t) => [uniqueIndex("org_units_bu_uq").on(t.businessUnit)],
 );
 
+/**
+ * Anonymous climate-survey responses pulled from a Google Sheet linked to the team's Google Form.
+ * No respondent identity is captured — one row per submission, raw answers keyed by question text.
+ */
+export const climateSurveyResponses = pgTable(
+  "climate_survey_responses",
+  {
+    id: serial("id").primaryKey(),
+    /** Row number in the source Sheet — used to detect which rows are already imported. */
+    sheetRow: integer("sheet_row").notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    answers: jsonb("answers").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("climate_survey_row_uq").on(t.sheetRow)],
+);
+
 export const importBatches = pgTable("import_batches", {
   id: serial("id").primaryKey(),
   fileName: text("file_name").notNull(),
@@ -328,3 +346,4 @@ export type ProbationReview = typeof probationReviews.$inferSelect;
 export type ProbationFeedback = typeof probationFeedback.$inferSelect;
 export type OnboardingSurvey = typeof onboardingSurveys.$inferSelect;
 export type OrgUnit = typeof orgUnits.$inferSelect;
+export type ClimateSurveyResponse = typeof climateSurveyResponses.$inferSelect;
