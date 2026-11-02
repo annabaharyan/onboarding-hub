@@ -2,14 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { filterOptions } from "@/lib/queries";
-import { employees, employeeChanges, monthlySnapshots, onboardingRequests, probationFeedback, probationReviews } from "@/db/schema";
+import { employees, employeeChanges, monthlySnapshots, onboardingRequests, onboardingSurveys, probationFeedback, probationReviews } from "@/db/schema";
 import { Badge, Card, PageHeader, Skeleton, StatusBadge, fmtDate, fmtDateTime, input } from "@/components/ui";
 import { FIELD_MAP, type EmployeeField } from "@/lib/fields";
+import { SURVEY_IMPROVEMENTS, SURVEY_IMPROVEMENT_LABEL, SURVEY_LIKES, SURVEY_LIKE_LABEL } from "@/lib/survey";
 import { EditEmployee } from "./edit-form";
-import { addProbationFeedback, openProbationReview, recordProbationDecision, unlockField } from "@/app/actions";
+import { addProbationFeedback, openProbationReview, recordProbationDecision, recordSurveyResponse, sendSurveyInvite, unlockField } from "@/app/actions";
 
 export default function EmployeePage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -39,6 +40,8 @@ async function EmployeeView({ params }: { params: Promise<{ id: string }> }) {
   ]);
   const feedbackByReview = new Map<number, typeof allFeedback[number]["f"][]>();
   for (const { f } of allFeedback) feedbackByReview.set(f.reviewId, [...(feedbackByReview.get(f.reviewId) ?? []), f]);
+
+  const [survey] = await db.select().from(onboardingSurveys).where(and(eq(onboardingSurveys.employeeId, id), eq(onboardingSurveys.surveyType, "six_month")));
 
   return (
     <>
@@ -155,6 +158,67 @@ async function EmployeeView({ params }: { params: Promise<{ id: string }> }) {
                   );
                 })}
               </ul>
+            )}
+          </Card>
+          <Card title="6-month survey">
+            {!survey ? (
+              <form action={sendSurveyInvite}>
+                <input type="hidden" name="employeeId" value={e.id} />
+                <p className="mb-2 text-sm text-muted">No survey sent yet.</p>
+                <button className="text-xs text-accent hover:underline">Mark invite sent</button>
+              </form>
+            ) : survey.respondedAt ? (
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between"><dt className="text-muted">Onboarding experience</dt><dd>{survey.onboardingExperienceScore ?? "—"}/5</dd></div>
+                <div className="flex justify-between"><dt className="text-muted">Manager support</dt><dd>{survey.managerSupportScore ?? "—"}/5</dd></div>
+                <div className="flex justify-between"><dt className="text-muted">Overall satisfaction</dt><dd>{survey.overallSatisfactionScore ?? "—"}/5</dd></div>
+                {survey.likes.length > 0 && <p className="text-muted">Liked: {survey.likes.map((l) => SURVEY_LIKE_LABEL[l as keyof typeof SURVEY_LIKE_LABEL] ?? l).join(", ")}</p>}
+                {survey.improvements.length > 0 && <p className="text-muted">Improve: {survey.improvements.map((i) => SURVEY_IMPROVEMENT_LABEL[i as keyof typeof SURVEY_IMPROVEMENT_LABEL] ?? i).join(", ")}</p>}
+                {survey.comments && <p className="text-muted">&ldquo;{survey.comments}&rdquo;</p>}
+                <p className="text-xs text-muted">Responded {fmtDateTime(survey.respondedAt)}</p>
+              </div>
+            ) : (
+              <form action={recordSurveyResponse} className="space-y-2.5 text-sm">
+                <input type="hidden" name="employeeId" value={e.id} />
+                <p className="text-xs text-muted">Invite sent {fmtDateTime(survey.sentAt)} — record the response below.</p>
+                {([
+                  ["onboardingExperienceScore", "Onboarding experience"],
+                  ["managerSupportScore", "Manager support"],
+                  ["overallSatisfactionScore", "Overall satisfaction"],
+                ] as const).map(([name, label]) => (
+                  <label key={name} className="flex items-center justify-between gap-2">
+                    {label}
+                    <select name={name} className={`${input} w-24`} defaultValue="">
+                      <option value="">—</option>
+                      {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}/5</option>)}
+                    </select>
+                  </label>
+                ))}
+                <div>
+                  <p className="mb-1 text-xs font-medium text-muted">What they liked</p>
+                  <div className="flex flex-wrap gap-2">
+                    {SURVEY_LIKES.map((l) => (
+                      <label key={l} className="flex items-center gap-1 text-xs">
+                        <input type="checkbox" name="likes" value={l} className="size-3.5 rounded border-line" />
+                        {SURVEY_LIKE_LABEL[l]}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1 text-xs font-medium text-muted">What could improve</p>
+                  <div className="flex flex-wrap gap-2">
+                    {SURVEY_IMPROVEMENTS.map((imp) => (
+                      <label key={imp} className="flex items-center gap-1 text-xs">
+                        <input type="checkbox" name="improvements" value={imp} className="size-3.5 rounded border-line" />
+                        {SURVEY_IMPROVEMENT_LABEL[imp]}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <input name="comments" placeholder="Other comments" className={input} />
+                <button className="text-xs text-accent hover:underline">Save response</button>
+              </form>
             )}
           </Card>
           <Card title="System IDs">

@@ -10,6 +10,7 @@ const ITEMS = [
   { href: "/import", label: "Import Excel", icon: "M12 16V4m0 0l-4 4m4-4l4 4M4 20h16" },
   { href: "/export", label: "Export Excel", icon: "M12 4v12m0 0l-4-4m4 4l4-4M4 20h16" },
   { href: "/integrations", label: "Integrations & sync", icon: "M4 12a8 8 0 0114-5.3M20 12a8 8 0 01-14 5.3M18 3v4h-4M6 21v-4h4" },
+  { href: "/surveys", label: "6-month survey", icon: "M9 12h6m-6 4h6M9 8h6M5 4h14v16H5z" },
 ];
 
 export function Nav() {

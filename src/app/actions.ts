@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { employees, employeeChanges, onboardingRequests, probationFeedback, probationReviews } from "@/db/schema";
+import { employees, employeeChanges, onboardingRequests, onboardingSurveys, probationFeedback, probationReviews } from "@/db/schema";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, sessionCookieOptions } from "@/lib/auth";
 import { CONNECTORS, defaultSources, runSync } from "@/lib/sync";
 import { EmployeeWriter, type Incoming } from "@/lib/employee-writer";
@@ -186,6 +186,56 @@ export async function addProbationFeedback(form: FormData) {
     skillScore: scoreRaw ? Number(scoreRaw) : null,
     comment: cleanText(form.get("comment")),
   });
+  revalidatePath(`/employees/${employeeId}`);
+}
+
+/** Records (or updates) an employee's six-month survey response. Upserted so the same employee can only have one response per survey type. */
+export async function recordSurveyResponse(form: FormData) {
+  const employeeId = Number(form.get("employeeId"));
+  const surveyType = String(form.get("surveyType") || "six_month");
+  const scoreOf = (name: string) => {
+    const raw = String(form.get(name) ?? "");
+    return raw ? Number(raw) : null;
+  };
+  const db = getDb();
+  await db
+    .insert(onboardingSurveys)
+    .values({
+      employeeId,
+      surveyType,
+      respondedAt: new Date(),
+      onboardingExperienceScore: scoreOf("onboardingExperienceScore"),
+      managerSupportScore: scoreOf("managerSupportScore"),
+      overallSatisfactionScore: scoreOf("overallSatisfactionScore"),
+      likes: form.getAll("likes").map(String),
+      improvements: form.getAll("improvements").map(String),
+      comments: cleanText(form.get("comments")),
+    })
+    .onConflictDoUpdate({
+      target: [onboardingSurveys.employeeId, onboardingSurveys.surveyType],
+      set: {
+        respondedAt: new Date(),
+        onboardingExperienceScore: scoreOf("onboardingExperienceScore"),
+        managerSupportScore: scoreOf("managerSupportScore"),
+        overallSatisfactionScore: scoreOf("overallSatisfactionScore"),
+        likes: form.getAll("likes").map(String),
+        improvements: form.getAll("improvements").map(String),
+        comments: cleanText(form.get("comments")),
+      },
+    });
+  revalidatePath(`/employees/${employeeId}`);
+  revalidatePath("/surveys");
+}
+
+/** Marks a six-month survey as sent (opens the record) without a response yet. */
+export async function sendSurveyInvite(form: FormData) {
+  const employeeId = Number(form.get("employeeId"));
+  const surveyType = String(form.get("surveyType") || "six_month");
+  const db = getDb();
+  await db
+    .insert(onboardingSurveys)
+    .values({ employeeId, surveyType, sentAt: new Date() })
+    .onConflictDoUpdate({ target: [onboardingSurveys.employeeId, onboardingSurveys.surveyType], set: { sentAt: new Date() } });
   revalidatePath(`/employees/${employeeId}`);
 }
 
