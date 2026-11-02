@@ -6,7 +6,7 @@ export type EmployeeField = Exclude<
 >;
 
 /** Fields stored as real booleans (not text) — drives Incoming's per-field typing in employee-writer.ts. */
-export const BOOLEAN_FIELDS = ["contractInTimebase", "ndaSigned", "gdprConsent", "cvOnFile", "welcomeKitSent"] as const;
+export const BOOLEAN_FIELDS = ["contractInTimebase", "ndaSigned", "gdprConsent", "cvOnFile", "welcomeKitSent", "welcomeTrainingDone", "elearningCompleted", "twoWeekCheckinDone", "hrbpNotified"] as const;
 export type BooleanField = (typeof BOOLEAN_FIELDS)[number];
 
 export type FieldDef = {
@@ -44,6 +44,10 @@ export const FIELDS: FieldDef[] = [
   { key: "gdprConsent", label: "GDPR consent", type: "boolean", synonyms: ["gdpr status", "gdpr consent", "gdpr"] },
   { key: "cvOnFile", label: "CV on file", type: "boolean", synonyms: ["cv in tb", "cv on file", "cv uploaded"] },
   { key: "welcomeKitSent", label: "Welcome kit sent", type: "boolean", synonyms: ["welcome kit", "welcome kit sent"] },
+  { key: "welcomeTrainingDone", label: "Welcome training done", type: "boolean", synonyms: ["welcome training", "welcome training done", "induction training", "onboarding training"] },
+  { key: "elearningCompleted", label: "E-learning completed", type: "boolean", synonyms: ["e-learning", "elearning", "e-learning completed", "online training completed", "lms completed"] },
+  { key: "twoWeekCheckinDone", label: "2-week check-in done", type: "boolean", synonyms: ["2 week check in", "two week check in", "2-week checkin", "14 day check in"] },
+  { key: "hrbpNotified", label: "HRBP notified", type: "boolean", synonyms: ["hrbp notified", "hrbp notification", "hr business partner notified"] },
   { key: "startDate", label: "Start date", type: "date", synonyms: ["start date", "hire date", "joining date", "date of joining", "onboarding date", "first working day", "employment start", "start"] },
   { key: "endDate", label: "End date", type: "date", synonyms: ["end date", "termination date", "leaving date", "last working day", "offboarding date", "exit date", "date of leaving"] },
   { key: "probationEndDate", label: "Probation end", type: "date", synonyms: ["probation end", "probation end date", "end of probation", "probation"] },

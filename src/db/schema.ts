@@ -103,6 +103,11 @@ export const employees = pgTable(
     gdprConsent: boolean("gdpr_consent").notNull().default(false),
     cvOnFile: boolean("cv_on_file").notNull().default(false),
     welcomeKitSent: boolean("welcome_kit_sent").notNull().default(false),
+    /** Onboarding deliverables tracker. Manual-only. */
+    welcomeTrainingDone: boolean("welcome_training_done").notNull().default(false),
+    elearningCompleted: boolean("elearning_completed").notNull().default(false),
+    twoWeekCheckinDone: boolean("two_week_checkin_done").notNull().default(false),
+    hrbpNotified: boolean("hrbp_notified").notNull().default(false),
     startDate: date("start_date"),
     endDate: date("end_date"),
     probationEndDate: date("probation_end_date"),
