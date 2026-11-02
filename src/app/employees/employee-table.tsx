@@ -11,13 +11,13 @@ type Row = { id: number; fullName: string; email: string | null; status: string;
 export function EmployeeTable({
   rows,
   cols,
-  sortHref,
+  sortHrefs,
   sort,
   dir,
 }: {
   rows: Row[];
   cols: EmployeeField[];
-  sortHref: (c: EmployeeField) => string;
+  sortHrefs: Record<EmployeeField, string>;
   sort?: string;
   dir?: string;
 }) {
@@ -65,7 +65,7 @@ export function EmployeeTable({
               </th>
               {cols.map((c) => (
                 <th key={c}>
-                  <Link href={sortHref(c)} className="hover:text-ink">
+                  <Link href={sortHrefs[c]} className="hover:text-ink">
                     {FIELD_MAP[c].label}
                     {sort === c ? (dir === "asc" ? " ↑" : " ↓") : ""}
                   </Link>

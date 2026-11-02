@@ -46,6 +46,7 @@ async function EmployeesView({ searchParams }: { searchParams: SP }) {
   const cols: EmployeeField[] = DEFAULT_COLUMNS.filter((c) => !["firstName", "lastName", "email", "gender", "employmentType"].includes(c));
   const sortHref = (c: EmployeeField) => `/employees?${filtersToSearch(f, { sort: c, dir: f.sort === c && f.dir === "asc" ? "desc" : "asc" })}`;
   const pageHref = (p: number) => `/employees?${filtersToSearch(f, { page: String(p), sort: f.sort, dir: f.dir })}`;
+  const sortHrefs = Object.fromEntries(cols.map((c) => [c, sortHref(c)])) as Record<EmployeeField, string>;
 
   return (
     <div className="space-y-6">
@@ -81,7 +82,7 @@ async function EmployeesView({ searchParams }: { searchParams: SP }) {
         {rows.length === 0 ? (
           <div className="p-5"><Empty title="No employees match these filters" /></div>
         ) : (
-          <EmployeeTable rows={rows} cols={cols} sortHref={sortHref} sort={f.sort} dir={f.dir} />
+          <EmployeeTable rows={rows} cols={cols} sortHrefs={sortHrefs} sort={f.sort} dir={f.dir} />
         )}
         {pages > 1 && (
           <div className="flex items-center justify-between border-t border-line px-5 py-3 text-sm">
