@@ -64,6 +64,13 @@
       "when": 1793607082685,
       "tag": "0008_add_org_units",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793620177124,
+      "tag": "0009_add_climate_survey",
+      "breakpoints": true
     }
   ]
 }

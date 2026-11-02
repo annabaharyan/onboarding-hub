@@ -5,7 +5,8 @@ import { ActionForm, SubmitButton } from "@/components/forms";
 import { CONNECTORS, defaultSources, lastRuns, latestRunPerSource } from "@/lib/sync";
 import { claudeConfigured } from "@/lib/integrations/claude";
 import { SOURCE_OWNERSHIP, FIELD_MAP } from "@/lib/fields";
-import { syncNow, testConnection } from "../actions";
+import { syncClimateSurveyNow, syncNow, testConnection } from "../actions";
+import { missingConfig as climateSurveyMissingConfig } from "@/lib/climate-survey";
 
 export const metadata = { title: "Integrations & sync" };
 
@@ -70,6 +71,31 @@ async function Body() {
             </Card>
           );
         })}
+        <Card title={<span className="flex items-center gap-2">Climate survey {climateSurveyMissingConfig().length ? <Badge tone="gray">Not configured</Badge> : <Badge tone="green">Configured</Badge>}</span>} actions={<SyncBadge status={latest.google_forms?.status} />}>
+          <p className="text-sm text-muted">
+            Pulls new rows from the Google Sheet linked to the team&apos;s anonymous climate survey form. No respondent identity is captured — results are shown on the <a href="/climate-survey" className="text-accent underline">Climate survey</a> page.
+          </p>
+          {latest.google_forms && (
+            <p className="mt-3 text-xs text-muted">
+              Last run {fmtDateTime(latest.google_forms.startedAt)} — {latest.google_forms.fetched} fetched, {latest.google_forms.created} new
+              {latest.google_forms.message && <span className={`block ${latest.google_forms.status === "failed" ? "text-rose-700" : "text-amber-800"}`}>{latest.google_forms.message}</span>}
+            </p>
+          )}
+          {climateSurveyMissingConfig().length > 0 && (
+            <p className="mt-3 text-xs text-amber-800">
+              Set: {climateSurveyMissingConfig().map((m) => <code key={m} className="mr-1 rounded bg-amber-50 px-1">{m}</code>)}
+            </p>
+          )}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <ActionForm action={testConnection}>
+              <input type="hidden" name="id" value="google_forms" />
+              <SubmitButton variant="secondary" pending="Testing…">Test connection</SubmitButton>
+            </ActionForm>
+            <ActionForm action={syncClimateSurveyNow}>
+              <SubmitButton variant="secondary" pending="Syncing…">Sync now</SubmitButton>
+            </ActionForm>
+          </div>
+        </Card>
         <Card title={<span className="flex items-center gap-2">Claude {claudeConfigured() ? <Badge tone="green">Configured</Badge> : <Badge>Not configured</Badge>}</span>}>
           <p className="text-sm text-muted">
             Reads Jira onboarding tickets, extracts the new joiner&apos;s details from free text, flags missing or implausible information and drafts the reporter comment. Tickets are only re-checked when their content changes, to keep API costs low.
