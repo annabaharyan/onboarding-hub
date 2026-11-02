@@ -263,6 +263,28 @@ export const probationFeedback = pgTable(
   (t) => [index("probation_feedback_review_idx").on(t.reviewId)],
 );
 
+/** 6-month onboarding survey: one response per employee, scored questions plus multi-select likes/improvements. */
+export const onboardingSurveys = pgTable(
+  "onboarding_surveys",
+  {
+    id: serial("id").primaryKey(),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "cascade" }),
+    surveyType: text("survey_type").notNull().default("six_month"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    respondedAt: timestamp("responded_at", { withTimezone: true }),
+    onboardingExperienceScore: integer("onboarding_experience_score"), // 1-5
+    managerSupportScore: integer("manager_support_score"), // 1-5
+    overallSatisfactionScore: integer("overall_satisfaction_score"), // 1-5
+    likes: text("likes").array().notNull().default([]),
+    improvements: text("improvements").array().notNull().default([]),
+    comments: text("comments"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("survey_emp_type_uq").on(t.employeeId, t.surveyType)],
+);
+
 export const importBatches = pgTable("import_batches", {
   id: serial("id").primaryKey(),
   fileName: text("file_name").notNull(),
@@ -286,3 +308,4 @@ export type OnboardingRequest = typeof onboardingRequests.$inferSelect;
 export type SyncRun = typeof syncRuns.$inferSelect;
 export type ProbationReview = typeof probationReviews.$inferSelect;
 export type ProbationFeedback = typeof probationFeedback.$inferSelect;
+export type OnboardingSurvey = typeof onboardingSurveys.$inferSelect;
