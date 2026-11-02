@@ -57,7 +57,7 @@ async function segmentBy(column: "business_unit" | "career_track"): Promise<Surv
   const rows = await db.execute<{ segment: string | null; responses: number; avg_onb: number | null; avg_mgr: number | null; avg_overall: number | null }>(
     sql.raw(`
       select
-        coalesce(e.${column}, '(none)') as segment,
+        coalesce(e.${column}::text, '(none)') as segment,
         count(*)::int as responses,
         avg(s.onboarding_experience_score)::float as avg_onb,
         avg(s.manager_support_score)::float as avg_mgr,
@@ -65,7 +65,7 @@ async function segmentBy(column: "business_unit" | "career_track"): Promise<Surv
       from onboarding_surveys s
       join employees e on e.id = s.employee_id
       where s.survey_type = 'six_month' and s.responded_at is not null
-      group by coalesce(e.${column}, '(none)')
+      group by coalesce(e.${column}::text, '(none)')
       order by responses desc
     `),
   );
