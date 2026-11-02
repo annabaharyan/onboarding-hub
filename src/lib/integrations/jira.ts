@@ -85,8 +85,8 @@ async function* searchIssues(): AsyncGenerator<JiraIssue> {
   } while (nextPageToken && guard++ < 100);
 }
 
-function normalise(fields: Partial<Record<EmployeeField, string | null>>): Incoming {
-  const out: Incoming = {};
+function normalise(fields: Partial<Record<EmployeeField, string | null>>): Partial<Record<EmployeeField, string | null>> {
+  const out: Partial<Record<EmployeeField, string | null>> = {};
   for (const [k, v] of Object.entries(fields) as [EmployeeField, string | null][]) {
     if (!v || !(k in FIELD_MAP)) continue;
     if (FIELD_MAP[k].type === "date") out[k] = parseDate(v);

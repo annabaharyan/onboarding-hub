@@ -22,6 +22,19 @@ export const employeeStatus = pgEnum("employee_status", [
   "inactive",
 ]);
 
+export const careerTrack = pgEnum("career_track", [
+  "partner_track",
+  "partner_ap",
+  "specialist",
+  "junior",
+  "guest",
+  "field",
+  "flexible_specialist",
+  "senior_affiliated_staff",
+  "expert_partner",
+  "external_pp",
+]);
+
 export const dataSource = pgEnum("data_source", [
   "excel",
   "manual",
@@ -71,6 +84,13 @@ export const employees = pgTable(
     legalEntity: text("legal_entity"),
     preferredFullName: text("preferred_full_name"),
     team: text("team"),
+    careerTrack: careerTrack("career_track"),
+    /** Onboarding compliance checklist. Manual-only — no external system owns these. */
+    contractInTimebase: boolean("contract_in_timebase").notNull().default(false),
+    ndaSigned: boolean("nda_signed").notNull().default(false),
+    gdprConsent: boolean("gdpr_consent").notNull().default(false),
+    cvOnFile: boolean("cv_on_file").notNull().default(false),
+    welcomeKitSent: boolean("welcome_kit_sent").notNull().default(false),
     startDate: date("start_date"),
     endDate: date("end_date"),
     probationEndDate: date("probation_end_date"),

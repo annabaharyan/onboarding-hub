@@ -3,7 +3,7 @@ import { Readable } from "node:stream";
 import { getDb } from "@/db";
 import { importBatches, type ImportIssue } from "@/db/schema";
 import { FIELDS, FIELD_MAP, type EmployeeField } from "../fields";
-import { cleanEmail, cleanText, monthEnd, normHeader, parseDate, parseGender, parseStatus, todayIso } from "../normalize";
+import { cleanEmail, cleanText, monthEnd, normHeader, parseBoolean, parseCareerTrack, parseDate, parseGender, parseStatus, todayIso } from "../normalize";
 import { EmployeeWriter, type DbLike, type Incoming } from "../employee-writer";
 
 /** Mapping target for a column: an employee field, a monthly snapshot column, kept as extra, or ignored. */
@@ -190,6 +190,17 @@ function rowToIncoming(columns: ColumnInfo[], cells: unknown[], rowNumber: numbe
       inc.email = e;
     } else if (def.key === "gender") {
       inc.gender = parseGender(v);
+    } else if (def.type === "boolean") {
+      const b = parseBoolean(v);
+      if (cleanText(v) && b === null) issues.push({ row: rowNumber, level: "warning", message: `${def.label}: couldn't read "${cleanText(v)}" as yes/no` });
+      if (b !== null) inc[def.key] = b;
+    } else if (def.type === "careerTrack") {
+      const t = parseCareerTrack(v);
+      if (cleanText(v) && !t) {
+        issues.push({ row: rowNumber, level: "warning", message: `Career track "${cleanText(v)}" not recognised — kept in extra columns` });
+        extra[col.header] = cleanText(v);
+      }
+      if (t) inc.careerTrack = t;
     } else {
       const s = typeof v === "number" ? String(v) : cleanText(v);
       inc[def.key] = s;
@@ -219,7 +230,7 @@ export type ImportSummary = {
   snapshots: number;
   snapshotMonths: number;
   issues: ImportIssue[];
-  sampleChanges: { row: number; name: string; result: string; changes: { field: string; from: string | null; to: string | null }[] }[];
+  sampleChanges: { row: number; name: string; result: string; changes: { field: string; from: string | boolean | null; to: string | boolean | null }[] }[];
 };
 
 export async function runImport(opts: {
@@ -274,7 +285,7 @@ export async function runImport(opts: {
     const writer = await EmployeeWriter.create(tx);
     for (const row of parsed.rows) {
       const { inc, snapshots } = rowToIncoming(parsed.columns, row.cells, row.rowNumber, issues);
-      const key = inc.employeeCode ? `c:${inc.employeeCode.toLowerCase()}` : inc.email ? `e:${inc.email}` : null;
+      const key = typeof inc.employeeCode === "string" ? `c:${inc.employeeCode.toLowerCase()}` : inc.email ? `e:${inc.email}` : null;
       if (key) {
         const prev = seen.get(key);
         if (prev) issues.push({ row: row.rowNumber, level: "warning", message: `Duplicate of row ${prev} (${key.slice(2)}) — later row values win` });
@@ -288,7 +299,12 @@ export async function runImport(opts: {
           writer.queueSnapshot({ employeeId: res.employeeId, month: s.month, value: s.value, status: parseStatus(s.value) ?? null, source: "excel" });
       summary.snapshots += snapshots.length;
       if (summary.sampleChanges.length < 25 && (res.result === "created" || res.changes.length))
-        summary.sampleChanges.push({ row: row.rowNumber, name: inc.fullName ?? [inc.firstName, inc.lastName].join(" "), result: res.result, changes: res.changes.slice(0, 8) });
+        summary.sampleChanges.push({
+          row: row.rowNumber,
+          name: (typeof inc.fullName === "string" ? inc.fullName : null) ?? [inc.firstName, inc.lastName].filter((x) => typeof x === "string").join(" "),
+          result: res.result,
+          changes: res.changes.slice(0, 8),
+        });
     }
     if (!opts.dryRun) await writer.flushSnapshots();
   };
