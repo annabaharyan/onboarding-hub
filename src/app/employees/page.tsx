@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { Card, Empty, PageHeader, Skeleton, StatusBadge, btn, fmtDate } from "@/components/ui";
+import { Card, Empty, PageHeader, Skeleton, btn } from "@/components/ui";
 import { FilterBar } from "@/components/filters";
 import { NewEmployee } from "./new-employee";
+import { EmployeeTable } from "./employee-table";
+import { DeleteAllButton } from "./delete-all-button";
 import { filterOptions, filtersToSearch, listEmployees, parseFilters } from "@/lib/queries";
-import { DEFAULT_COLUMNS, FIELD_MAP, type EmployeeField } from "@/lib/fields";
+import { DEFAULT_COLUMNS, type EmployeeField } from "@/lib/fields";
 import { QUALITY_SQL } from "@/lib/insights";
 
 export const metadata = { title: "Employees" };
@@ -68,54 +70,18 @@ async function EmployeesView({ searchParams }: { searchParams: SP }) {
         padded={false}
         title={<span>{total.toLocaleString()} employee{total === 1 ? "" : "s"}</span>}
         actions={
-          <a href={`/api/export?${qs}`} className={btn.secondary}>
-            ⬇ Export these to Excel
-          </a>
+          <div className="flex items-center gap-2">
+            <a href={`/api/export?${qs}`} className={btn.secondary}>
+              ⬇ Export these to Excel
+            </a>
+            <DeleteAllButton qs={qs} count={total} filtered={Boolean(qs)} />
+          </div>
         }
       >
         {rows.length === 0 ? (
           <div className="p-5"><Empty title="No employees match these filters" /></div>
         ) : (
-          <div className="max-h-[70vh] overflow-auto">
-            <table className="data">
-              <thead>
-                <tr>
-                  {cols.map((c) => (
-                    <th key={c}>
-                      <Link href={sortHref(c)} className="hover:text-ink">
-                        {FIELD_MAP[c].label}
-                        {f.sort === c ? (f.dir === "asc" ? " ↑" : " ↓") : ""}
-                      </Link>
-                    </th>
-                  ))}
-                  <th>Sources</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id}>
-                    {cols.map((c) => (
-                      <td key={c}>
-                        {c === "fullName" ? (
-                          <Link href={`/employees/${r.id}`} className="font-medium text-accent hover:underline">
-                            {r.fullName}
-                            {r.email && <span className="block text-xs font-normal text-muted">{r.email}</span>}
-                          </Link>
-                        ) : c === "status" ? (
-                          <StatusBadge status={r.status} />
-                        ) : FIELD_MAP[c].type === "date" ? (
-                          <span className="tabular-nums">{fmtDate(r[c] as string | null)}</span>
-                        ) : (
-                          (r[c] as string | null) ?? <span className="text-muted">—</span>
-                        )}
-                      </td>
-                    ))}
-                    <td className="text-xs text-muted">{r.sources.join(", ")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <EmployeeTable rows={rows} cols={cols} sortHref={sortHref} sort={f.sort} dir={f.dir} />
         )}
         {pages > 1 && (
           <div className="flex items-center justify-between border-t border-line px-5 py-3 text-sm">
