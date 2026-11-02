@@ -57,6 +57,13 @@
       "when": 1793606995104,
       "tag": "0007_add_onboarding_surveys",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793607082685,
+      "tag": "0008_add_org_units",
+      "breakpoints": true
     }
   ]
 }

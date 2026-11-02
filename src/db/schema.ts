@@ -285,6 +285,24 @@ export const onboardingSurveys = pgTable(
   (t) => [uniqueIndex("survey_emp_type_uq").on(t.employeeId, t.surveyType)],
 );
 
+/** Org hierarchy reference table: Cluster -> Business Unit -> the people in each support role for it. */
+export const orgUnits = pgTable(
+  "org_units",
+  {
+    id: serial("id").primaryKey(),
+    cluster: text("cluster"),
+    businessUnit: text("business_unit").notNull(),
+    hrbp: text("hrbp"),
+    headOfBusinessOps: text("head_of_business_ops"),
+    businessController: text("business_controller"),
+    staffingPartner: text("staffing_partner"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("org_units_bu_uq").on(t.businessUnit)],
+);
+
 export const importBatches = pgTable("import_batches", {
   id: serial("id").primaryKey(),
   fileName: text("file_name").notNull(),
@@ -309,3 +327,4 @@ export type SyncRun = typeof syncRuns.$inferSelect;
 export type ProbationReview = typeof probationReviews.$inferSelect;
 export type ProbationFeedback = typeof probationFeedback.$inferSelect;
 export type OnboardingSurvey = typeof onboardingSurveys.$inferSelect;
+export type OrgUnit = typeof orgUnits.$inferSelect;
