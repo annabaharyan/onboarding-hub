@@ -15,6 +15,7 @@ import { cleanEmail, cleanText, parseBoolean, parseCareerTrack, parseDate, parse
 import { claudeConfigured, testClaude } from "@/lib/integrations/claude";
 import { fetchIssue, processIssue } from "@/lib/integrations/jira";
 import type { ConnectorId } from "@/lib/integrations/types";
+import { runClimateSurveySync, testConnection as testClimateSurveySheet } from "@/lib/climate-survey";
 
 export type ActionState = { ok: boolean; message: string } | null;
 
@@ -57,11 +58,25 @@ export async function testConnection(_: ActionState, form: FormData): Promise<Ac
       if (!claudeConfigured()) return { ok: false, message: "Set ANTHROPIC_API_KEY first." };
       return { ok: true, message: await testClaude() };
     }
+    if (id === "google_forms") return { ok: true, message: await testClimateSurveySheet() };
     const c = CONNECTORS[id as ConnectorId];
     if (!c) return { ok: false, message: "Unknown connector" };
     const missing = c.missingConfig();
     if (missing.length) return { ok: false, message: `Missing configuration: ${missing.join(", ")}` };
     return { ok: true, message: await c.test() };
+  } catch (e) {
+    return { ok: false, message: (e as Error).message };
+  }
+}
+
+export async function syncClimateSurveyNow(): Promise<ActionState> {
+  try {
+    const run = await runClimateSurveySync("manual");
+    revalidatePath("/integrations");
+    revalidatePath("/climate-survey");
+    if (run.status === "skipped") return { ok: false, message: `Skipped — ${run.message}` };
+    if (run.status === "failed") return { ok: false, message: `Failed — ${run.message}` };
+    return { ok: true, message: `${run.fetched} fetched, ${run.created} new, ${run.unchanged} already had.` };
   } catch (e) {
     return { ok: false, message: (e as Error).message };
   }
