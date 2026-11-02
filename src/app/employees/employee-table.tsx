@@ -47,6 +47,11 @@ export function EmployeeTable({
     });
   }
 
+  // Full name is pinned leftmost (after the checkbox) so it stays visible while scrolling horizontally.
+  const CHECKBOX_W = 40;
+  const NAME_W = 220;
+  const otherCols = cols.filter((c) => c !== "fullName");
+
   return (
     <>
       {selected.size > 0 && (
@@ -70,10 +75,16 @@ export function EmployeeTable({
         <table className="data">
           <thead>
             <tr>
-              <th className="w-8">
+              <th className="z-20 bg-canvas" style={{ position: "sticky", left: 0, width: CHECKBOX_W }}>
                 <input type="checkbox" checked={allChecked} onChange={toggleAll} aria-label="Select all on this page" className="size-4 rounded border-line" />
               </th>
-              {cols.map((c) => (
+              <th className="z-20 bg-canvas" style={{ position: "sticky", left: CHECKBOX_W, width: NAME_W }}>
+                <Link href={sortHrefs.fullName} className="hover:text-ink">
+                  {FIELD_MAP.fullName.label}
+                  {sort === "fullName" ? (dir === "asc" ? " ↑" : " ↓") : ""}
+                </Link>
+              </th>
+              {otherCols.map((c) => (
                 <th key={c}>
                   <Link href={sortHrefs[c]} className="hover:text-ink">
                     {FIELD_MAP[c].label}
@@ -85,30 +96,35 @@ export function EmployeeTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className={selected.has(r.id) ? "bg-rose-50/40" : undefined}>
-                <td>
-                  <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} aria-label={`Select ${r.fullName}`} className="size-4 rounded border-line" />
-                </td>
-                {cols.map((c) => (
-                  <td key={c}>
-                    {c === "fullName" ? (
-                      <Link href={`/employees/${r.id}`} className="font-medium text-accent hover:underline">
-                        {r.fullName}
-                        {r.email && <span className="block text-xs font-normal text-muted">{r.email}</span>}
-                      </Link>
-                    ) : c === "status" ? (
-                      <StatusBadge status={r.status} />
-                    ) : FIELD_MAP[c].type === "date" ? (
-                      <span className="tabular-nums">{fmtDate(r[c] as string | null)}</span>
-                    ) : (
-                      (r[c] as string | null) ?? <span className="text-muted">—</span>
-                    )}
+            {rows.map((r) => {
+              const isSelected = selected.has(r.id);
+              const pinnedBg = isSelected ? "bg-rose-50" : "bg-surface";
+              return (
+                <tr key={r.id} className={isSelected ? "bg-rose-50/40" : undefined}>
+                  <td className={`z-10 ${pinnedBg}`} style={{ position: "sticky", left: 0, width: CHECKBOX_W }}>
+                    <input type="checkbox" checked={isSelected} onChange={() => toggleOne(r.id)} aria-label={`Select ${r.fullName}`} className="size-4 rounded border-line" />
                   </td>
-                ))}
-                <td className="text-xs text-muted">{r.sources.join(", ")}</td>
-              </tr>
-            ))}
+                  <td className={`z-10 ${pinnedBg}`} style={{ position: "sticky", left: CHECKBOX_W, width: NAME_W }}>
+                    <Link href={`/employees/${r.id}`} className="font-medium text-accent hover:underline">
+                      {r.fullName}
+                      {r.email && <span className="block text-xs font-normal text-muted">{r.email}</span>}
+                    </Link>
+                  </td>
+                  {otherCols.map((c) => (
+                    <td key={c}>
+                      {c === "status" ? (
+                        <StatusBadge status={r.status} />
+                      ) : FIELD_MAP[c].type === "date" ? (
+                        <span className="tabular-nums">{fmtDate(r[c] as string | null)}</span>
+                      ) : (
+                        (r[c] as string | null) ?? <span className="text-muted">—</span>
+                      )}
+                    </td>
+                  ))}
+                  <td className="text-xs text-muted">{r.sources.join(", ")}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
