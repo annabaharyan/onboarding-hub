@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { employees, employeeChanges, onboardingRequests, onboardingSurveys, probationFeedback, probationReviews } from "@/db/schema";
+import { employees, employeeChanges, onboardingRequests, onboardingSurveys, orgUnits, probationFeedback, probationReviews } from "@/db/schema";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, sessionCookieOptions } from "@/lib/auth";
 import { CONNECTORS, defaultSources, runSync } from "@/lib/sync";
 import { EmployeeWriter, type Incoming } from "@/lib/employee-writer";
@@ -237,6 +237,46 @@ export async function sendSurveyInvite(form: FormData) {
     .values({ employeeId, surveyType, sentAt: new Date() })
     .onConflictDoUpdate({ target: [onboardingSurveys.employeeId, onboardingSurveys.surveyType], set: { sentAt: new Date() } });
   revalidatePath(`/employees/${employeeId}`);
+}
+
+/** Creates or updates the org-hierarchy row for a business unit (one row per BU). */
+export async function upsertOrgUnit(_: ActionState, form: FormData): Promise<ActionState> {
+  const businessUnit = cleanText(form.get("businessUnit"));
+  if (!businessUnit) return { ok: false, message: "Business unit is required" };
+  const db = getDb();
+  await db
+    .insert(orgUnits)
+    .values({
+      businessUnit,
+      cluster: cleanText(form.get("cluster")),
+      hrbp: cleanText(form.get("hrbp")),
+      headOfBusinessOps: cleanText(form.get("headOfBusinessOps")),
+      businessController: cleanText(form.get("businessController")),
+      staffingPartner: cleanText(form.get("staffingPartner")),
+      notes: cleanText(form.get("notes")),
+    })
+    .onConflictDoUpdate({
+      target: orgUnits.businessUnit,
+      set: {
+        cluster: cleanText(form.get("cluster")),
+        hrbp: cleanText(form.get("hrbp")),
+        headOfBusinessOps: cleanText(form.get("headOfBusinessOps")),
+        businessController: cleanText(form.get("businessController")),
+        staffingPartner: cleanText(form.get("staffingPartner")),
+        notes: cleanText(form.get("notes")),
+        updatedAt: new Date(),
+      },
+    });
+  revalidatePath("/org");
+  revalidatePath("/employees");
+  return { ok: true, message: `Saved org hierarchy for "${businessUnit}".` };
+}
+
+export async function deleteOrgUnit(form: FormData) {
+  const id = Number(form.get("id"));
+  const db = getDb();
+  await db.delete(orgUnits).where(eq(orgUnits.id, id));
+  revalidatePath("/org");
 }
 
 const PROBATION_DECISIONS = ["confirmed", "extended", "terminated"] as const;

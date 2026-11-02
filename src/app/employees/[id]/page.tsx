@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { filterOptions } from "@/lib/queries";
-import { employees, employeeChanges, monthlySnapshots, onboardingRequests, onboardingSurveys, probationFeedback, probationReviews } from "@/db/schema";
+import { employees, employeeChanges, monthlySnapshots, onboardingRequests, onboardingSurveys, orgUnits, probationFeedback, probationReviews } from "@/db/schema";
 import { Badge, Card, PageHeader, Skeleton, StatusBadge, fmtDate, fmtDateTime, input } from "@/components/ui";
 import { FIELD_MAP, type EmployeeField } from "@/lib/fields";
 import { SURVEY_IMPROVEMENTS, SURVEY_IMPROVEMENT_LABEL, SURVEY_LIKES, SURVEY_LIKE_LABEL } from "@/lib/survey";
@@ -42,6 +42,7 @@ async function EmployeeView({ params }: { params: Promise<{ id: string }> }) {
   for (const { f } of allFeedback) feedbackByReview.set(f.reviewId, [...(feedbackByReview.get(f.reviewId) ?? []), f]);
 
   const [survey] = await db.select().from(onboardingSurveys).where(and(eq(onboardingSurveys.employeeId, id), eq(onboardingSurveys.surveyType, "six_month")));
+  const [orgUnit] = e.businessUnit ? await db.select().from(orgUnits).where(eq(orgUnits.businessUnit, e.businessUnit)) : [];
 
   return (
     <>
@@ -160,6 +161,15 @@ async function EmployeeView({ params }: { params: Promise<{ id: string }> }) {
               </ul>
             )}
           </Card>
+          {orgUnit && (
+            <Card title="Org hierarchy" actions={<Link href="/org" className="text-xs text-accent hover:underline">Edit →</Link>}>
+              <dl className="space-y-1.5 text-sm">
+                {[["Cluster", orgUnit.cluster], ["Business unit", orgUnit.businessUnit], ["HRBP", orgUnit.hrbp], ["Head of Business Ops", orgUnit.headOfBusinessOps], ["Business Controller", orgUnit.businessController], ["Staffing Partner", orgUnit.staffingPartner]].map(([k, v]) => (
+                  <div key={k} className="flex justify-between gap-2"><dt className="text-muted">{k}</dt><dd className="truncate">{v ?? "—"}</dd></div>
+                ))}
+              </dl>
+            </Card>
+          )}
           <Card title="6-month survey">
             {!survey ? (
               <form action={sendSurveyInvite}>
