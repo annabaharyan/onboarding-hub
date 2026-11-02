@@ -5,11 +5,11 @@ import { connection } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { filterOptions } from "@/lib/queries";
-import { employees, employeeChanges, monthlySnapshots, onboardingRequests } from "@/db/schema";
-import { Badge, Card, PageHeader, Skeleton, StatusBadge, fmtDate, fmtDateTime } from "@/components/ui";
+import { employees, employeeChanges, monthlySnapshots, onboardingRequests, probationFeedback, probationReviews } from "@/db/schema";
+import { Badge, Card, PageHeader, Skeleton, StatusBadge, fmtDate, fmtDateTime, input } from "@/components/ui";
 import { FIELD_MAP, type EmployeeField } from "@/lib/fields";
 import { EditEmployee } from "./edit-form";
-import { unlockField } from "@/app/actions";
+import { addProbationFeedback, openProbationReview, recordProbationDecision, unlockField } from "@/app/actions";
 
 export default function EmployeePage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -26,12 +26,19 @@ async function EmployeeView({ params }: { params: Promise<{ id: string }> }) {
   const db = getDb();
   const [e] = await db.select().from(employees).where(eq(employees.id, id));
   if (!e) notFound();
-  const [changes, snaps, tickets, { legalEntity: legalEntityOptions }] = await Promise.all([
+  const [changes, snaps, tickets, { legalEntity: legalEntityOptions }, reviews, allFeedback] = await Promise.all([
     db.select().from(employeeChanges).where(eq(employeeChanges.employeeId, id)).orderBy(desc(employeeChanges.changedAt)).limit(100),
     db.select().from(monthlySnapshots).where(eq(monthlySnapshots.employeeId, id)).orderBy(desc(monthlySnapshots.month)).limit(24),
     db.select().from(onboardingRequests).where(eq(onboardingRequests.employeeId, id)),
     filterOptions(),
+    db.select().from(probationReviews).where(eq(probationReviews.employeeId, id)).orderBy(desc(probationReviews.createdAt)),
+    db.select({ f: probationFeedback }).from(probationFeedback)
+      .innerJoin(probationReviews, eq(probationFeedback.reviewId, probationReviews.id))
+      .where(eq(probationReviews.employeeId, id))
+      .orderBy(desc(probationFeedback.createdAt)),
   ]);
+  const feedbackByReview = new Map<number, typeof allFeedback[number]["f"][]>();
+  for (const { f } of allFeedback) feedbackByReview.set(f.reviewId, [...(feedbackByReview.get(f.reviewId) ?? []), f]);
 
   return (
     <>
@@ -81,6 +88,75 @@ async function EmployeeView({ params }: { params: Promise<{ id: string }> }) {
               </ul>
             </Card>
           )}
+          <Card title="Probation">
+            {reviews.length === 0 ? (
+              <form action={openProbationReview}>
+                <input type="hidden" name="employeeId" value={e.id} />
+                <p className="mb-2 text-sm text-muted">No probation review opened yet{e.probationEndDate ? ` — current end date ${fmtDate(e.probationEndDate)}` : ""}.</p>
+                <button className="text-xs text-accent hover:underline">Open probation review</button>
+              </form>
+            ) : (
+              <ul className="space-y-4">
+                {reviews.map((r) => {
+                  const fb = feedbackByReview.get(r.id) ?? [];
+                  return (
+                    <li key={r.id} className="border-b border-line pb-4 last:border-0 last:pb-0">
+                      <div className="flex items-center justify-between text-sm">
+                        <span>Opened {fmtDate(r.createdAt)}{r.dueDate ? ` · due ${fmtDate(r.dueDate)}` : ""}</span>
+                        <Badge tone={r.decision === "pending" ? "gray" : r.decision === "terminated" ? "red" : "green"}>{r.decision}</Badge>
+                      </div>
+                      {fb.length > 0 && (
+                        <ul className="mt-2 space-y-1 text-sm text-muted">
+                          {fb.map((f) => (
+                            <li key={f.id}>
+                              <span className="font-medium text-ink">{f.reviewerName}</span>
+                              {f.reviewerRole ? ` (${f.reviewerRole})` : ""}
+                              {f.skillScore != null ? ` — ${f.skillScore}/5` : ""}
+                              {f.comment ? `: ${f.comment}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {r.decision === "pending" ? (
+                        <>
+                          <form action={addProbationFeedback} className="mt-3 grid gap-1.5 sm:grid-cols-2">
+                            <input type="hidden" name="reviewId" value={r.id} />
+                            <input type="hidden" name="employeeId" value={e.id} />
+                            <input name="reviewerName" placeholder="Reviewer name" className={input} required />
+                            <input name="reviewerRole" placeholder="Role (e.g. Manager)" className={input} />
+                            <select name="skillScore" className={input} defaultValue="">
+                              <option value="">Skill score</option>
+                              {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}/5</option>)}
+                            </select>
+                            <input name="comment" placeholder="Comment" className={input} />
+                            <button className="col-span-full justify-self-start text-xs text-accent hover:underline">Add feedback</button>
+                          </form>
+                          <form action={recordProbationDecision} className="mt-3 grid gap-1.5 sm:grid-cols-2">
+                            <input type="hidden" name="reviewId" value={r.id} />
+                            <input type="hidden" name="employeeId" value={e.id} />
+                            <select name="decision" className={input} required defaultValue="">
+                              <option value="" disabled>Committee decision…</option>
+                              <option value="confirmed">Confirm</option>
+                              <option value="extended">Extend</option>
+                              <option value="terminated">Terminate</option>
+                            </select>
+                            <input name="decidedBy" placeholder="Decided by" className={input} />
+                            <input name="extendedToDate" type="date" className={input} title="New end date — only used if decision is Extend" />
+                            <input name="committeeNotes" placeholder="Notes" className={input} />
+                            <button className="col-span-full justify-self-start text-xs text-accent hover:underline">Record decision</button>
+                          </form>
+                        </>
+                      ) : (
+                        <p className="mt-2 text-xs text-muted">
+                          Decided {r.decisionDate ? fmtDate(r.decisionDate) : ""}{r.decidedBy ? ` by ${r.decidedBy}` : ""}{r.committeeNotes ? ` — ${r.committeeNotes}` : ""}
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
           <Card title="System IDs">
             <dl className="space-y-1.5 text-sm">
               {[["Leapsome", e.leapsomeId], ["Timebase", e.timebaseId], ["Jira", e.jiraKey], ["Last synced", fmtDateTime(e.lastSyncedAt)], ["Created", fmtDateTime(e.createdAt)]].map(([k, v]) => (

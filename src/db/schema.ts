@@ -216,6 +216,48 @@ export const syncRuns = pgTable(
   (t) => [index("sync_source_idx").on(t.source, t.startedAt)],
 );
 
+export const probationDecision = pgEnum("probation_decision", ["pending", "confirmed", "extended", "terminated"]);
+
+/** Tracks one probation review cycle per employee through to the hiring-committee decision. */
+export const probationReviews = pgTable(
+  "probation_reviews",
+  {
+    id: serial("id").primaryKey(),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "cascade" }),
+    /** Snapshot of employees.probationEndDate when the review was opened — drives reminders. */
+    dueDate: date("due_date"),
+    decision: probationDecision("decision").notNull().default("pending"),
+    decisionDate: date("decision_date"),
+    decidedBy: text("decided_by"),
+    /** Only set when decision = "extended". */
+    extendedToDate: date("extended_to_date"),
+    committeeNotes: text("committee_notes"),
+    reminderSentAt: timestamp("reminder_sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("probation_reviews_employee_idx").on(t.employeeId), index("probation_reviews_due_idx").on(t.dueDate)],
+);
+
+/** Multi-stakeholder skill scores and comments feeding into a probation review. */
+export const probationFeedback = pgTable(
+  "probation_feedback",
+  {
+    id: serial("id").primaryKey(),
+    reviewId: integer("review_id")
+      .notNull()
+      .references(() => probationReviews.id, { onDelete: "cascade" }),
+    reviewerName: text("reviewer_name").notNull(),
+    reviewerRole: text("reviewer_role"), // e.g. Manager, HRBP, Peer
+    skillScore: integer("skill_score"), // 1-5
+    comment: text("comment"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("probation_feedback_review_idx").on(t.reviewId)],
+);
+
 export const importBatches = pgTable("import_batches", {
   id: serial("id").primaryKey(),
   fileName: text("file_name").notNull(),
@@ -237,3 +279,5 @@ export type Employee = typeof employees.$inferSelect;
 export type NewEmployee = typeof employees.$inferInsert;
 export type OnboardingRequest = typeof onboardingRequests.$inferSelect;
 export type SyncRun = typeof syncRuns.$inferSelect;
+export type ProbationReview = typeof probationReviews.$inferSelect;
+export type ProbationFeedback = typeof probationFeedback.$inferSelect;
