@@ -12,7 +12,7 @@ export type BooleanField = (typeof BOOLEAN_FIELDS)[number];
 export type FieldDef = {
   key: EmployeeField;
   label: string;
-  type: "text" | "date" | "status" | "boolean" | "careerTrack";
+  type: "text" | "date" | "status" | "boolean" | "careerTrack" | "offboardingReasonCategory";
   /** Normalised header names that map to this field during Excel import. */
   synonyms: string[];
   editable?: boolean;
@@ -47,7 +47,8 @@ export const FIELDS: FieldDef[] = [
   { key: "startDate", label: "Start date", type: "date", synonyms: ["start date", "hire date", "joining date", "date of joining", "onboarding date", "first working day", "employment start", "start"] },
   { key: "endDate", label: "End date", type: "date", synonyms: ["end date", "termination date", "leaving date", "last working day", "offboarding date", "exit date", "date of leaving"] },
   { key: "probationEndDate", label: "Probation end", type: "date", synonyms: ["probation end", "probation end date", "end of probation", "probation"] },
-  { key: "offboardingReason", label: "Offboarding reason", type: "text", synonyms: ["offboarding reason", "termination reason", "reason for leaving", "leaving reason", "exit reason"] },
+  { key: "offboardingReason", label: "Offboarding reason (detail)", type: "text", synonyms: ["offboarding reason", "termination reason", "reason for leaving", "leaving reason", "exit reason"] },
+  { key: "offboardingReasonCategory", label: "Offboarding reason category", type: "offboardingReasonCategory", synonyms: ["offboarding reason category", "offboarding category", "leaving category", "exit category", "termination category"] },
   { key: "leapsomeId", label: "Leapsome ID", type: "text", synonyms: ["leapsome id"] },
   { key: "timebaseId", label: "Timebase ID", type: "text", synonyms: ["timebase id"] },
   { key: "jiraKey", label: "Jira ticket", type: "text", synonyms: ["jira", "jira key", "jira ticket", "ticket"] },
@@ -81,6 +82,31 @@ export const CAREER_TRACK_LABEL: Record<CareerTrack, string> = {
   senior_affiliated_staff: "Senior Affiliated Staff",
   expert_partner: "Expert Partner",
   external_pp: "External PP",
+};
+
+export const OFFBOARDING_REASONS = [
+  "resignation",
+  "dismissal_performance",
+  "dismissal_conduct",
+  "redundancy",
+  "end_of_fixed_term_contract",
+  "mutual_agreement",
+  "retirement",
+  "death",
+  "other",
+] as const;
+export type OffboardingReason = (typeof OFFBOARDING_REASONS)[number];
+
+export const OFFBOARDING_REASON_LABEL: Record<OffboardingReason, string> = {
+  resignation: "Resignation",
+  dismissal_performance: "Dismissal — performance",
+  dismissal_conduct: "Dismissal — conduct",
+  redundancy: "Redundancy",
+  end_of_fixed_term_contract: "End of fixed-term contract",
+  mutual_agreement: "Mutual agreement",
+  retirement: "Retirement",
+  death: "Death",
+  other: "Other",
 };
 
 export const STATUSES = [

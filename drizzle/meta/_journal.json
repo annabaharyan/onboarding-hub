@@ -29,6 +29,13 @@
       "when": 1793605899522,
       "tag": "0003_add_compliance_career_track",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793606547236,
+      "tag": "0004_add_offboarding_taxonomy_legal_entity",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
+import { filterOptions } from "@/lib/queries";
 import { employees, employeeChanges, monthlySnapshots, onboardingRequests } from "@/db/schema";
 import { Badge, Card, PageHeader, Skeleton, StatusBadge, fmtDate, fmtDateTime } from "@/components/ui";
 import { FIELD_MAP, type EmployeeField } from "@/lib/fields";
@@ -25,10 +26,11 @@ async function EmployeeView({ params }: { params: Promise<{ id: string }> }) {
   const db = getDb();
   const [e] = await db.select().from(employees).where(eq(employees.id, id));
   if (!e) notFound();
-  const [changes, snaps, tickets] = await Promise.all([
+  const [changes, snaps, tickets, { legalEntity: legalEntityOptions }] = await Promise.all([
     db.select().from(employeeChanges).where(eq(employeeChanges.employeeId, id)).orderBy(desc(employeeChanges.changedAt)).limit(100),
     db.select().from(monthlySnapshots).where(eq(monthlySnapshots.employeeId, id)).orderBy(desc(monthlySnapshots.month)).limit(24),
     db.select().from(onboardingRequests).where(eq(onboardingRequests.employeeId, id)),
+    filterOptions(),
   ]);
 
   return (
@@ -47,7 +49,7 @@ async function EmployeeView({ params }: { params: Promise<{ id: string }> }) {
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
           <Card title="Details" actions={<span className="text-xs text-muted">Edited fields are locked from sync overwrites</span>}>
-            <EditEmployee employee={JSON.parse(JSON.stringify(e))} />
+            <EditEmployee employee={JSON.parse(JSON.stringify(e))} legalEntityOptions={legalEntityOptions} />
           </Card>
           {Object.keys(e.extra).length > 0 && (
             <Card title="Additional columns from the headcount file">

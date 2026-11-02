@@ -1,4 +1,4 @@
-import { CAREER_TRACKS, type CareerTrack, type Status } from "./fields";
+import { CAREER_TRACKS, OFFBOARDING_REASONS, type CareerTrack, type OffboardingReason, type Status } from "./fields";
 
 export function normHeader(h: unknown): string {
   return String(h ?? "")
@@ -130,6 +130,26 @@ export function parseCareerTrack(v: unknown): CareerTrack | null {
   if ((CAREER_TRACKS as readonly string[]).includes(k)) return k;
   for (const [re, t] of CAREER_TRACK_WORDS) if (re.test(s)) return t;
   return null;
+}
+
+const OFFBOARDING_REASON_WORDS: [RegExp, OffboardingReason][] = [
+  [/resign|quit|voluntary/i, "resignation"],
+  [/performance/i, "dismissal_performance"],
+  [/conduct|misconduct|disciplinary|gross/i, "dismissal_conduct"],
+  [/redundan|layoff|restructur|downsiz/i, "redundancy"],
+  [/fixed[\s-]?term|contract\s*end|contract\s*expir/i, "end_of_fixed_term_contract"],
+  [/mutual/i, "mutual_agreement"],
+  [/retire/i, "retirement"],
+  [/death|deceased|passed\s*away/i, "death"],
+];
+
+export function parseOffboardingReason(v: unknown): OffboardingReason | null {
+  const s = cleanText(v);
+  if (!s) return null;
+  const k = s.toLowerCase().replace(/[\s/-]+/g, "_") as OffboardingReason;
+  if ((OFFBOARDING_REASONS as readonly string[]).includes(k)) return k;
+  for (const [re, r] of OFFBOARDING_REASON_WORDS) if (re.test(s)) return r;
+  return "other";
 }
 
 export function parseGender(v: unknown): string | null {

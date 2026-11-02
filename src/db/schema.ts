@@ -35,6 +35,18 @@ export const careerTrack = pgEnum("career_track", [
   "external_pp",
 ]);
 
+export const offboardingReasonCategory = pgEnum("offboarding_reason_category", [
+  "resignation",
+  "dismissal_performance",
+  "dismissal_conduct",
+  "redundancy",
+  "end_of_fixed_term_contract",
+  "mutual_agreement",
+  "retirement",
+  "death",
+  "other",
+]);
+
 export const dataSource = pgEnum("data_source", [
   "excel",
   "manual",
@@ -95,6 +107,7 @@ export const employees = pgTable(
     endDate: date("end_date"),
     probationEndDate: date("probation_end_date"),
     offboardingReason: text("offboarding_reason"),
+    offboardingReasonCategory: offboardingReasonCategory("offboarding_reason_category"),
     leapsomeId: text("leapsome_id"),
     timebaseId: text("timebase_id"),
     jiraKey: text("jira_key"),

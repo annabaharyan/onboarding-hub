@@ -10,7 +10,7 @@ import { SESSION_COOKIE, createSessionToken, passwordMatches, sessionCookieOptio
 import { CONNECTORS, defaultSources, runSync } from "@/lib/sync";
 import { EmployeeWriter, type Incoming } from "@/lib/employee-writer";
 import { FIELDS, type EmployeeField } from "@/lib/fields";
-import { cleanEmail, cleanText, parseBoolean, parseCareerTrack, parseDate, parseStatus } from "@/lib/normalize";
+import { cleanEmail, cleanText, parseBoolean, parseCareerTrack, parseDate, parseOffboardingReason, parseStatus } from "@/lib/normalize";
 import { claudeConfigured, testClaude } from "@/lib/integrations/claude";
 import { fetchIssue, processIssue } from "@/lib/integrations/jira";
 import type { ConnectorId } from "@/lib/integrations/types";
@@ -81,6 +81,7 @@ export async function updateEmployee(_: ActionState, form: FormData): Promise<Ac
       inc[f.key] = d;
     } else if (f.type === "status") inc.status = parseStatus(raw);
     else if (f.type === "careerTrack") inc.careerTrack = raw ? parseCareerTrack(raw) : null;
+    else if (f.type === "offboardingReasonCategory") inc.offboardingReasonCategory = raw ? parseOffboardingReason(raw) : null;
     else if (f.type === "boolean") inc[f.key] = parseBoolean(raw) ?? false;
     else if (f.key === "email") {
       const e = raw ? cleanEmail(raw) : null;

@@ -1,0 +1,2 @@
+CREATE TYPE "public"."offboarding_reason_category" AS ENUM('resignation', 'dismissal_performance', 'dismissal_conduct', 'redundancy', 'end_of_fixed_term_contract', 'mutual_agreement', 'retirement', 'death', 'other');--> statement-breakpoint
+ALTER TABLE "employees" ADD COLUMN "offboarding_reason_category" "offboarding_reason_category";
