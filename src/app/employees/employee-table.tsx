@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { deleteEmployees } from "@/app/actions";
 import { StatusBadge, fmtDate } from "@/components/ui";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FIELD_MAP, type EmployeeField } from "@/lib/fields";
 
 type Row = { id: number; fullName: string; email: string | null; status: string; sources: string[] } & Record<string, unknown>;
@@ -22,6 +23,7 @@ export function EmployeeTable({
   dir?: string;
 }) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.id));
 
@@ -36,13 +38,12 @@ export function EmployeeTable({
       return next;
     });
   }
-  function handleDeleteSelected() {
-    if (selected.size === 0) return;
-    if (!confirm(`Delete ${selected.size} employee(s)? This permanently removes their records, change history and any survey/probation data. This cannot be undone.`)) return;
+  function confirmDeleteSelected() {
     const ids = [...selected];
     startTransition(async () => {
       await deleteEmployees(ids);
       setSelected(new Set());
+      setConfirmOpen(false);
     });
   }
 
@@ -51,11 +52,20 @@ export function EmployeeTable({
       {selected.size > 0 && (
         <div className="flex items-center justify-between border-b border-line bg-rose-50 px-5 py-2 text-sm text-rose-900">
           <span>{selected.size} selected</span>
-          <button onClick={handleDeleteSelected} disabled={pending} className="font-medium text-rose-700 hover:underline disabled:opacity-50">
+          <button onClick={() => setConfirmOpen(true)} disabled={pending} className="font-medium text-rose-700 hover:underline disabled:opacity-50">
             {pending ? "Deleting…" : "Delete selected"}
           </button>
         </div>
       )}
+      <ConfirmDialog
+        open={confirmOpen}
+        title={`Delete ${selected.size} employee${selected.size === 1 ? "" : "s"}?`}
+        description="This permanently removes their records, change history and any survey/probation data. This cannot be undone."
+        confirmLabel="Delete selected"
+        pending={pending}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={confirmDeleteSelected}
+      />
       <div className="max-h-[70vh] overflow-auto">
         <table className="data">
           <thead>
