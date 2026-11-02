@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { and, asc, gte, inArray, lte, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { employees, monthlySnapshots, onboardingRequests, employeeChanges } from "@/db/schema";
-import { CAREER_TRACK_LABEL, FIELD_MAP, STATUS_LABEL, type CareerTrack, type EmployeeField, type Status } from "../fields";
+import { CAREER_TRACK_LABEL, FIELD_MAP, OFFBOARDING_REASON_LABEL, STATUS_LABEL, type CareerTrack, type EmployeeField, type OffboardingReason, type Status } from "../fields";
 import { buildWhere, type EmployeeFilters } from "../queries";
 
 export type ExportOptions = {
@@ -68,6 +68,7 @@ export async function buildExport(filters: EmployeeFilters, opts: ExportOptions)
         def.type === "date" ? toDate(v as string | null)
         : def.type === "status" ? STATUS_LABEL[v as Status] ?? v
         : def.type === "careerTrack" ? (v ? CAREER_TRACK_LABEL[v as CareerTrack] ?? v : null)
+        : def.type === "offboardingReasonCategory" ? (v ? OFFBOARDING_REASON_LABEL[v as OffboardingReason] ?? v : null)
         : v;
     }
     record._sources = r.sources.join(", ");

@@ -3,7 +3,7 @@ import { Readable } from "node:stream";
 import { getDb } from "@/db";
 import { importBatches, type ImportIssue } from "@/db/schema";
 import { FIELDS, FIELD_MAP, type EmployeeField } from "../fields";
-import { cleanEmail, cleanText, monthEnd, normHeader, parseBoolean, parseCareerTrack, parseDate, parseGender, parseStatus, todayIso } from "../normalize";
+import { cleanEmail, cleanText, monthEnd, normHeader, parseBoolean, parseCareerTrack, parseDate, parseGender, parseOffboardingReason, parseStatus, todayIso } from "../normalize";
 import { EmployeeWriter, type DbLike, type Incoming } from "../employee-writer";
 
 /** Mapping target for a column: an employee field, a monthly snapshot column, kept as extra, or ignored. */
@@ -201,6 +201,9 @@ function rowToIncoming(columns: ColumnInfo[], cells: unknown[], rowNumber: numbe
         extra[col.header] = cleanText(v);
       }
       if (t) inc.careerTrack = t;
+    } else if (def.type === "offboardingReasonCategory") {
+      const r = parseOffboardingReason(v);
+      if (r) inc.offboardingReasonCategory = r;
     } else {
       const s = typeof v === "number" ? String(v) : cleanText(v);
       inc[def.key] = s;
