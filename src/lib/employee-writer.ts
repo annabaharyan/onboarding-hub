@@ -5,11 +5,11 @@ import { FIELD_MAP, SOURCE_OWNERSHIP, type EmployeeField } from "./fields";
 import { countryToCode, splitName, todayIso } from "./normalize";
 
 export type WriteSource = "excel" | "manual" | "leapsome" | "timebase" | "jira";
-export type Incoming = Partial<Record<EmployeeField, string | null>> & { extra?: Record<string, unknown> };
+export type Incoming = Partial<Record<EmployeeField, string | boolean | null>> & { extra?: Record<string, unknown> };
 export type WriteResult = {
   result: "created" | "updated" | "unchanged" | "skipped";
   employeeId?: number;
-  changes: { field: string; from: string | null; to: string | null }[];
+  changes: { field: string; from: string | boolean | null; to: string | boolean | null }[];
   issues: string[];
 };
 
@@ -33,6 +33,8 @@ type Options = {
 };
 
 const lc = (s: string | null | undefined) => (s ? s.trim().toLowerCase() : "");
+/** Narrow a generically-typed incoming value to string (new boolean fields never flow through these string-only paths). */
+const str = (v: string | boolean | null | undefined): string | null | undefined => (typeof v === "string" ? v : v == null ? v : null);
 
 /**
  * Loads all employees once and applies incoming records with consistent matching
@@ -82,18 +84,21 @@ export class EmployeeWriter {
   /** Strong identifiers first, then name + start date. Name alone only matches when unique and the source isn't creating. */
   match(inc: Incoming, nameOnly: "never" | "unique" | "uniqueWithoutEmail" = "never"): Employee | undefined {
     const tryKey = (m: Map<string, number>, k?: string | null) => (k ? m.get(k) : undefined);
+    const [leapsomeId, timebaseId, employeeCode, email, fullName, startDate] = [
+      str(inc.leapsomeId), str(inc.timebaseId), str(inc.employeeCode), str(inc.email), str(inc.fullName), str(inc.startDate),
+    ];
     const id =
-      tryKey(this.idx.leapsomeId, inc.leapsomeId) ??
-      tryKey(this.idx.timebaseId, inc.timebaseId) ??
-      tryKey(this.idx.employeeCode, lc(inc.employeeCode)) ??
-      tryKey(this.idx.email, lc(inc.email)) ??
-      (inc.fullName && inc.startDate ? this.idx.nameStart.get(`${lc(inc.fullName)}|${inc.startDate}`) : undefined);
+      tryKey(this.idx.leapsomeId, leapsomeId) ??
+      tryKey(this.idx.timebaseId, timebaseId) ??
+      tryKey(this.idx.employeeCode, lc(employeeCode)) ??
+      tryKey(this.idx.email, lc(email)) ??
+      (fullName && startDate ? this.idx.nameStart.get(`${lc(fullName)}|${startDate}`) : undefined);
     if (id !== undefined) return this.byId.get(id);
-    if (nameOnly !== "never" && inc.fullName) {
-      const list = this.idx.name.get(lc(inc.fullName));
+    if (nameOnly !== "never" && fullName) {
+      const list = this.idx.name.get(lc(fullName));
       if (list?.length === 1) {
         const cand = this.byId.get(list[0])!;
-        if (inc.email && cand.email && lc(inc.email) !== lc(cand.email)) return undefined; // conflicting emails → different people
+        if (email && cand.email && lc(email) !== lc(cand.email)) return undefined; // conflicting emails → different people
         // An HRIS record with an email may only claim a same-name person who has no email yet
         if (nameOnly === "unique" || (!cand.email && !cand.leapsomeId)) return cand;
       }
@@ -103,16 +108,19 @@ export class EmployeeWriter {
 
   private derive(inc: Incoming): Incoming {
     const out: Incoming = { ...inc };
-    if (!out.fullName && (out.firstName || out.lastName))
-      out.fullName = [out.firstName, out.lastName].filter(Boolean).join(" ");
-    if (out.fullName && !out.firstName && !out.lastName) Object.assign(out, splitName(out.fullName));
-    if (out.country && !out.countryCode) out.countryCode = countryToCode(out.country);
-    if (out.email) out.email = out.email.toLowerCase();
+    const firstName = str(out.firstName), lastName = str(out.lastName);
+    if (!out.fullName && (firstName || lastName)) out.fullName = [firstName, lastName].filter(Boolean).join(" ");
+    const fullName = str(out.fullName);
+    if (fullName && !firstName && !lastName) Object.assign(out, splitName(fullName));
+    const country = str(out.country);
+    if (country && !out.countryCode) out.countryCode = countryToCode(country);
+    const email = str(out.email);
+    if (email) out.email = email.toLowerCase();
     return out;
   }
 
-  private canWrite(field: EmployeeField, existing: Employee, source: WriteSource, incomingValue: string | null, excelMode: Options["excelMode"] = "respect_sources"): boolean {
-    const current = existing[field] as string | null;
+  private canWrite(field: EmployeeField, existing: Employee, source: WriteSource, incomingValue: string | boolean | null, excelMode: Options["excelMode"] = "respect_sources"): boolean {
+    const current = existing[field] as string | boolean | null;
     if (source === "manual") return true;
     if (existing.lockedFields.includes(field)) return false;
     if (source === "excel") {
@@ -121,7 +129,7 @@ export class EmployeeWriter {
       return managedBy.length === 0 || current === null || current === "";
     }
     if ((SOURCE_OWNERSHIP[source] as string[]).includes(field)) {
-      if (field === "status") return this.statusTransitionAllowed(existing, incomingValue);
+      if (field === "status") return this.statusTransitionAllowed(existing, incomingValue as string | null);
       return true;
     }
     return current === null || current === "";
@@ -152,7 +160,7 @@ export class EmployeeWriter {
       if (!inc.fullName) return { result: "skipped", changes: [], issues: ["Missing name — row skipped"] };
       // uniqueness guards
       for (const k of ["email", "employeeCode", "leapsomeId", "timebaseId"] as const) {
-        const v = inc[k];
+        const v = str(inc[k]);
         const m = k === "email" || k === "employeeCode" ? this.idx[k].get(lc(v)) : v ? this.idx[k].get(v) : undefined;
         if (v && m !== undefined) {
           issues.push(`${FIELD_MAP[k].label} "${v}" already belongs to another employee — ignored`);
@@ -193,23 +201,25 @@ export class EmployeeWriter {
     const patch: Record<string, unknown> = {};
     const changes: WriteResult["changes"] = [];
     for (const [k, raw] of Object.entries(inc)) {
-      if (k === "extra" || typeof raw !== "string" || raw === "") continue; // absence never clears data
+      if (k === "extra") continue;
+      if (typeof raw === "string" && raw === "") continue; // absence never clears data
+      if (typeof raw !== "string" && typeof raw !== "boolean") continue;
       const v = raw;
       const field = k as EmployeeField;
       if (!(field in FIELD_MAP)) continue;
-      const cur = (existing[field] as string | null) ?? null;
-      if (cur === v || (field === "email" && lc(cur) === lc(v))) continue;
+      const cur = (existing[field] as string | boolean | null) ?? null;
+      if (cur === v || (typeof v === "string" && field === "email" && lc(cur as string) === lc(v))) continue;
       if (!this.canWrite(field, existing, opts.source, v, opts.excelMode)) continue;
       // uniqueness guard on update
       if (field === "email" || field === "employeeCode") {
-        const other = this.idx[field].get(lc(v));
+        const other = this.idx[field].get(lc(v as string));
         if (other !== undefined && other !== existing.id) {
           issues.push(`${FIELD_MAP[field].label} "${v}" belongs to another employee — not changed`);
           continue;
         }
       }
       if (field === "leapsomeId" || field === "timebaseId") {
-        const other = this.idx[field].get(v);
+        const other = this.idx[field].get(v as string);
         if (other !== undefined && other !== existing.id) continue;
       }
       patch[field] = v;
@@ -252,8 +262,8 @@ export class EmployeeWriter {
           changes.map((c) => ({
             employeeId: existing.id,
             field: c.field,
-            oldValue: c.from,
-            newValue: c.to,
+            oldValue: typeof c.from === "boolean" ? String(c.from) : c.from,
+            newValue: typeof c.to === "boolean" ? String(c.to) : c.to,
             source: opts.source,
             syncRunId: opts.syncRunId,
             importBatchId: opts.importBatchId,

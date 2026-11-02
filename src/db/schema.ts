@@ -22,6 +22,31 @@ export const employeeStatus = pgEnum("employee_status", [
   "inactive",
 ]);
 
+export const careerTrack = pgEnum("career_track", [
+  "partner_track",
+  "partner_ap",
+  "specialist",
+  "junior",
+  "guest",
+  "field",
+  "flexible_specialist",
+  "senior_affiliated_staff",
+  "expert_partner",
+  "external_pp",
+]);
+
+export const offboardingReasonCategory = pgEnum("offboarding_reason_category", [
+  "resignation",
+  "dismissal_performance",
+  "dismissal_conduct",
+  "redundancy",
+  "end_of_fixed_term_contract",
+  "mutual_agreement",
+  "retirement",
+  "death",
+  "other",
+]);
+
 export const dataSource = pgEnum("data_source", [
   "excel",
   "manual",
@@ -71,10 +96,23 @@ export const employees = pgTable(
     legalEntity: text("legal_entity"),
     preferredFullName: text("preferred_full_name"),
     team: text("team"),
+    careerTrack: careerTrack("career_track"),
+    /** Onboarding compliance checklist. Manual-only — no external system owns these. */
+    contractInTimebase: boolean("contract_in_timebase").notNull().default(false),
+    ndaSigned: boolean("nda_signed").notNull().default(false),
+    gdprConsent: boolean("gdpr_consent").notNull().default(false),
+    cvOnFile: boolean("cv_on_file").notNull().default(false),
+    welcomeKitSent: boolean("welcome_kit_sent").notNull().default(false),
+    /** Onboarding deliverables tracker. Manual-only. */
+    welcomeTrainingDone: boolean("welcome_training_done").notNull().default(false),
+    elearningCompleted: boolean("elearning_completed").notNull().default(false),
+    twoWeekCheckinDone: boolean("two_week_checkin_done").notNull().default(false),
+    hrbpNotified: boolean("hrbp_notified").notNull().default(false),
     startDate: date("start_date"),
     endDate: date("end_date"),
     probationEndDate: date("probation_end_date"),
     offboardingReason: text("offboarding_reason"),
+    offboardingReasonCategory: offboardingReasonCategory("offboarding_reason_category"),
     leapsomeId: text("leapsome_id"),
     timebaseId: text("timebase_id"),
     jiraKey: text("jira_key"),
@@ -183,6 +221,88 @@ export const syncRuns = pgTable(
   (t) => [index("sync_source_idx").on(t.source, t.startedAt)],
 );
 
+export const probationDecision = pgEnum("probation_decision", ["pending", "confirmed", "extended", "terminated"]);
+
+/** Tracks one probation review cycle per employee through to the hiring-committee decision. */
+export const probationReviews = pgTable(
+  "probation_reviews",
+  {
+    id: serial("id").primaryKey(),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "cascade" }),
+    /** Snapshot of employees.probationEndDate when the review was opened — drives reminders. */
+    dueDate: date("due_date"),
+    decision: probationDecision("decision").notNull().default("pending"),
+    decisionDate: date("decision_date"),
+    decidedBy: text("decided_by"),
+    /** Only set when decision = "extended". */
+    extendedToDate: date("extended_to_date"),
+    committeeNotes: text("committee_notes"),
+    reminderSentAt: timestamp("reminder_sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("probation_reviews_employee_idx").on(t.employeeId), index("probation_reviews_due_idx").on(t.dueDate)],
+);
+
+/** Multi-stakeholder skill scores and comments feeding into a probation review. */
+export const probationFeedback = pgTable(
+  "probation_feedback",
+  {
+    id: serial("id").primaryKey(),
+    reviewId: integer("review_id")
+      .notNull()
+      .references(() => probationReviews.id, { onDelete: "cascade" }),
+    reviewerName: text("reviewer_name").notNull(),
+    reviewerRole: text("reviewer_role"), // e.g. Manager, HRBP, Peer
+    skillScore: integer("skill_score"), // 1-5
+    comment: text("comment"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("probation_feedback_review_idx").on(t.reviewId)],
+);
+
+/** 6-month onboarding survey: one response per employee, scored questions plus multi-select likes/improvements. */
+export const onboardingSurveys = pgTable(
+  "onboarding_surveys",
+  {
+    id: serial("id").primaryKey(),
+    employeeId: integer("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "cascade" }),
+    surveyType: text("survey_type").notNull().default("six_month"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    respondedAt: timestamp("responded_at", { withTimezone: true }),
+    onboardingExperienceScore: integer("onboarding_experience_score"), // 1-5
+    managerSupportScore: integer("manager_support_score"), // 1-5
+    overallSatisfactionScore: integer("overall_satisfaction_score"), // 1-5
+    likes: text("likes").array().notNull().default([]),
+    improvements: text("improvements").array().notNull().default([]),
+    comments: text("comments"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("survey_emp_type_uq").on(t.employeeId, t.surveyType)],
+);
+
+/** Org hierarchy reference table: Cluster -> Business Unit -> the people in each support role for it. */
+export const orgUnits = pgTable(
+  "org_units",
+  {
+    id: serial("id").primaryKey(),
+    cluster: text("cluster"),
+    businessUnit: text("business_unit").notNull(),
+    hrbp: text("hrbp"),
+    headOfBusinessOps: text("head_of_business_ops"),
+    businessController: text("business_controller"),
+    staffingPartner: text("staffing_partner"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("org_units_bu_uq").on(t.businessUnit)],
+);
+
 export const importBatches = pgTable("import_batches", {
   id: serial("id").primaryKey(),
   fileName: text("file_name").notNull(),
@@ -204,3 +324,7 @@ export type Employee = typeof employees.$inferSelect;
 export type NewEmployee = typeof employees.$inferInsert;
 export type OnboardingRequest = typeof onboardingRequests.$inferSelect;
 export type SyncRun = typeof syncRuns.$inferSelect;
+export type ProbationReview = typeof probationReviews.$inferSelect;
+export type ProbationFeedback = typeof probationFeedback.$inferSelect;
+export type OnboardingSurvey = typeof onboardingSurveys.$inferSelect;
+export type OrgUnit = typeof orgUnits.$inferSelect;

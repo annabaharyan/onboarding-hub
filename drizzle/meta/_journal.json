@@ -22,6 +22,48 @@
       "when": 1793293579829,
       "tag": "0002_add_leapsome_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793605899522,
+      "tag": "0003_add_compliance_career_track",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793606547236,
+      "tag": "0004_add_offboarding_taxonomy_legal_entity",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793606734424,
+      "tag": "0005_add_probation_reviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793606792819,
+      "tag": "0006_add_onboarding_deliverables",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793606995104,
+      "tag": "0007_add_onboarding_surveys",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793607082685,
+      "tag": "0008_add_org_units",
+      "breakpoints": true
     }
   ]
 }

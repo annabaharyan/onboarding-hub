@@ -124,15 +124,16 @@ export async function filterOptions() {
   const db = getDb();
   const distinct = async (col: AnyPgColumn) =>
     (await db.selectDistinct({ v: col }).from(employees).where(sql`${col} is not null and ${col} <> ''`).orderBy(asc(col))).map((r) => r.v as string);
-  const [businessUnit, department, location, country, gender, employmentType] = await Promise.all([
+  const [businessUnit, department, location, country, gender, employmentType, legalEntity] = await Promise.all([
     distinct(employees.businessUnit),
     distinct(employees.department),
     distinct(employees.location),
     distinct(employees.country),
     distinct(employees.gender),
     distinct(employees.employmentType),
+    distinct(employees.legalEntity),
   ]);
-  return { businessUnit, department, location, country, gender, employmentType };
+  return { businessUnit, department, location, country, gender, employmentType, legalEntity };
 }
 
 export function parseColumns(p: ParamsLike): EmployeeField[] {

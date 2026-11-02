@@ -1,4 +1,4 @@
-import type { Status } from "./fields";
+import { CAREER_TRACKS, OFFBOARDING_REASONS, type CareerTrack, type OffboardingReason, type Status } from "./fields";
 
 export function normHeader(h: unknown): string {
   return String(h ?? "")
@@ -97,6 +97,59 @@ export function parseStatus(v: unknown): Status | null {
     return k as Status;
   for (const [re, st] of STATUS_WORDS) if (re.test(s)) return st;
   return null;
+}
+
+export function parseBoolean(v: unknown): boolean | null {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v === 1 ? true : v === 0 ? false : null;
+  const s = cleanText(v);
+  if (!s) return null;
+  const l = s.toLowerCase();
+  if (["true", "yes", "y", "1", "checked", "done", "signed", "sent", "x", "✓", "complete", "completed"].includes(l)) return true;
+  if (["false", "no", "n", "0", "unchecked", "not done", "pending", "not signed", "not sent"].includes(l)) return false;
+  return null;
+}
+
+const CAREER_TRACK_WORDS: [RegExp, CareerTrack][] = [
+  [/partner[\s-]?track/i, "partner_track"],
+  [/partner\s*\/?\s*ap|associate partner/i, "partner_ap"],
+  [/flexible\s*specialist/i, "flexible_specialist"],
+  [/senior\s*affiliated\s*staff/i, "senior_affiliated_staff"],
+  [/expert\s*partner/i, "expert_partner"],
+  [/external\s*pp/i, "external_pp"],
+  [/specialist/i, "specialist"],
+  [/junior/i, "junior"],
+  [/guest/i, "guest"],
+  [/^field$/i, "field"],
+];
+
+export function parseCareerTrack(v: unknown): CareerTrack | null {
+  const s = cleanText(v);
+  if (!s) return null;
+  const k = s.toLowerCase().replace(/[\s/-]+/g, "_") as CareerTrack;
+  if ((CAREER_TRACKS as readonly string[]).includes(k)) return k;
+  for (const [re, t] of CAREER_TRACK_WORDS) if (re.test(s)) return t;
+  return null;
+}
+
+const OFFBOARDING_REASON_WORDS: [RegExp, OffboardingReason][] = [
+  [/resign|quit|voluntary/i, "resignation"],
+  [/performance/i, "dismissal_performance"],
+  [/conduct|misconduct|disciplinary|gross/i, "dismissal_conduct"],
+  [/redundan|layoff|restructur|downsiz/i, "redundancy"],
+  [/fixed[\s-]?term|contract\s*end|contract\s*expir/i, "end_of_fixed_term_contract"],
+  [/mutual/i, "mutual_agreement"],
+  [/retire/i, "retirement"],
+  [/death|deceased|passed\s*away/i, "death"],
+];
+
+export function parseOffboardingReason(v: unknown): OffboardingReason | null {
+  const s = cleanText(v);
+  if (!s) return null;
+  const k = s.toLowerCase().replace(/[\s/-]+/g, "_") as OffboardingReason;
+  if ((OFFBOARDING_REASONS as readonly string[]).includes(k)) return k;
+  for (const [re, r] of OFFBOARDING_REASON_WORDS) if (re.test(s)) return r;
+  return "other";
 }
 
 export function parseGender(v: unknown): string | null {

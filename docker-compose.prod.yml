@@ -1,0 +1,45 @@
+# Production deployment file. Use this on the server instead of docker-compose.yml
+# (that one is for local development only — don't change it, don't use it in prod):
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# See DEPLOYMENT.md for the full walkthrough.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      retries: 10
+    # No published port here on purpose: only reachable from the app/cron
+    # containers on this network, not from the internet or the host.
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    ports: ["3000:3000"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  # Daily sync (see scripts/cron-worker.ts). Schedule/timezone come from
+  # CRON_SCHEDULE / CRON_TIMEZONE in .env (defaults: 08:00 Asia/Yerevan).
+  cron:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      APP_URL: http://app:3000
+    command: ["npx", "tsx", "scripts/cron-worker.ts"]
+    depends_on: [app]
+
+volumes:
+  pgdata:
