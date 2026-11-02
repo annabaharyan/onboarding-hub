@@ -5,12 +5,12 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { employees, employeeChanges, onboardingRequests } from "@/db/schema";
+import { employees, employeeChanges, onboardingRequests, probationFeedback, probationReviews } from "@/db/schema";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, sessionCookieOptions } from "@/lib/auth";
 import { CONNECTORS, defaultSources, runSync } from "@/lib/sync";
 import { EmployeeWriter, type Incoming } from "@/lib/employee-writer";
 import { FIELDS, type EmployeeField } from "@/lib/fields";
-import { cleanEmail, cleanText, parseBoolean, parseCareerTrack, parseDate, parseOffboardingReason, parseStatus } from "@/lib/normalize";
+import { cleanEmail, cleanText, parseBoolean, parseCareerTrack, parseDate, parseOffboardingReason, parseStatus, todayIso } from "@/lib/normalize";
 import { claudeConfigured, testClaude } from "@/lib/integrations/claude";
 import { fetchIssue, processIssue } from "@/lib/integrations/jira";
 import type { ConnectorId } from "@/lib/integrations/types";
@@ -159,4 +159,61 @@ export async function linkTicketToNewEmployee(form: FormData) {
   );
   if (res.employeeId) await db.update(onboardingRequests).set({ employeeId: res.employeeId }).where(eq(onboardingRequests.id, id));
   revalidatePath("/onboarding");
+}
+
+/** Opens a new probation review cycle for an employee, snapshotting the current probation end date as the due date. */
+export async function openProbationReview(form: FormData) {
+  const employeeId = Number(form.get("employeeId"));
+  const db = getDb();
+  const [emp] = await db.select({ probationEndDate: employees.probationEndDate }).from(employees).where(eq(employees.id, employeeId));
+  if (!emp) return;
+  await db.insert(probationReviews).values({ employeeId, dueDate: emp.probationEndDate, decision: "pending" });
+  revalidatePath(`/employees/${employeeId}`);
+}
+
+/** Records one stakeholder's skill score / comment against an open probation review. */
+export async function addProbationFeedback(form: FormData) {
+  const reviewId = Number(form.get("reviewId"));
+  const employeeId = Number(form.get("employeeId"));
+  const reviewerName = cleanText(form.get("reviewerName"));
+  if (!reviewerName) return;
+  const scoreRaw = String(form.get("skillScore") ?? "");
+  const db = getDb();
+  await db.insert(probationFeedback).values({
+    reviewId,
+    reviewerName,
+    reviewerRole: cleanText(form.get("reviewerRole")),
+    skillScore: scoreRaw ? Number(scoreRaw) : null,
+    comment: cleanText(form.get("comment")),
+  });
+  revalidatePath(`/employees/${employeeId}`);
+}
+
+const PROBATION_DECISIONS = ["confirmed", "extended", "terminated"] as const;
+
+/** Records the hiring-committee decision for a probation review; an extension also pushes out the employee's probation end date. */
+export async function recordProbationDecision(form: FormData) {
+  const reviewId = Number(form.get("reviewId"));
+  const employeeId = Number(form.get("employeeId"));
+  const decisionRaw = String(form.get("decision"));
+  if (!(PROBATION_DECISIONS as readonly string[]).includes(decisionRaw)) return;
+  const decision = decisionRaw as (typeof PROBATION_DECISIONS)[number];
+  const decidedBy = cleanText(form.get("decidedBy"));
+  const extendedToDate = decision === "extended" ? parseDate(form.get("extendedToDate")) : null;
+  const committeeNotes = cleanText(form.get("committeeNotes"));
+  const db = getDb();
+  await db.update(probationReviews).set({
+    decision,
+    decidedBy,
+    extendedToDate,
+    committeeNotes,
+    decisionDate: todayIso(),
+    updatedAt: new Date(),
+  }).where(eq(probationReviews.id, reviewId));
+  if (decision === "extended" && extendedToDate) {
+    await db.update(employees).set({ probationEndDate: extendedToDate }).where(eq(employees.id, employeeId));
+  } else if (decision === "confirmed") {
+    await db.update(employees).set({ probationEndDate: null }).where(eq(employees.id, employeeId));
+  }
+  revalidatePath(`/employees/${employeeId}`);
 }
