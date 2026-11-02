@@ -10,6 +10,7 @@ import { Badge, Card, PageHeader, Skeleton, StatusBadge, fmtDate, fmtDateTime, i
 import { FIELD_MAP, type EmployeeField } from "@/lib/fields";
 import { SURVEY_IMPROVEMENTS, SURVEY_IMPROVEMENT_LABEL, SURVEY_LIKES, SURVEY_LIKE_LABEL } from "@/lib/survey";
 import { EditEmployee } from "./edit-form";
+import { DeleteEmployeeButton } from "./delete-employee-button";
 import { addProbationFeedback, openProbationReview, recordProbationDecision, recordSurveyResponse, sendSurveyInvite, unlockField } from "@/app/actions";
 
 export default function EmployeePage({ params }: { params: Promise<{ id: string }> }) {
@@ -56,6 +57,7 @@ async function EmployeeView({ params }: { params: Promise<{ id: string }> }) {
             {e.sources.map((s) => <Badge key={s}>{s}</Badge>)}
           </span>
         }
+        actions={<DeleteEmployeeButton id={e.id} name={e.fullName} />}
       />
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">

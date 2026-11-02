@@ -3,13 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { employees, employeeChanges, onboardingRequests, onboardingSurveys, orgUnits, probationFeedback, probationReviews } from "@/db/schema";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, sessionCookieOptions } from "@/lib/auth";
 import { CONNECTORS, defaultSources, runSync } from "@/lib/sync";
 import { EmployeeWriter, type Incoming } from "@/lib/employee-writer";
 import { FIELDS, type EmployeeField } from "@/lib/fields";
+import { buildWhere, parseFilters } from "@/lib/queries";
 import { cleanEmail, cleanText, parseBoolean, parseCareerTrack, parseDate, parseOffboardingReason, parseStatus, todayIso } from "@/lib/normalize";
 import { claudeConfigured, testClaude } from "@/lib/integrations/claude";
 import { fetchIssue, processIssue } from "@/lib/integrations/jira";
@@ -111,6 +112,34 @@ export async function updateEmployee(_: ActionState, form: FormData): Promise<Ac
   const n = res.changes.length + cleared.length;
   if (res.issues.length) return { ok: false, message: `Saved ${n} change(s), but: ${res.issues.join("; ")}` };
   return { ok: true, message: n ? `Saved ${n} change(s). Edited fields are now locked from sync overwrites.` : "No changes." };
+}
+
+/** Deletes a single employee (called directly from a client component, not a <form>). */
+export async function deleteEmployee(id: number) {
+  const db = getDb();
+  await db.delete(employees).where(eq(employees.id, id));
+  revalidatePath("/employees");
+  revalidatePath("/");
+}
+
+/** Bulk-deletes the employees whose ids were checked in the list view. */
+export async function deleteEmployees(ids: number[]) {
+  const clean = ids.filter((n) => Number.isInteger(n));
+  if (!clean.length) return;
+  const db = getDb();
+  await db.delete(employees).where(inArray(employees.id, clean));
+  revalidatePath("/employees");
+  revalidatePath("/");
+}
+
+/** Deletes every employee matching the current list filters (all employees if none are applied) — mirrors what "Export these to Excel" exports. */
+export async function deleteAllEmployees(qs: string) {
+  const f = parseFilters(new URLSearchParams(qs));
+  const where = buildWhere(f);
+  const db = getDb();
+  await db.delete(employees).where(where);
+  revalidatePath("/employees");
+  revalidatePath("/");
 }
 
 export async function unlockField(form: FormData) {
