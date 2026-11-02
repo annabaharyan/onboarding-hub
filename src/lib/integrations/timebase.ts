@@ -87,8 +87,8 @@ export const timebase: Connector = {
         const res = await writer.apply(inc, { source: "timebase", syncRunId: runId, createIfMissing: false });
         if (res.result === "skipped") {
           c.skipped++;
-          unmatched.push(inc.email ?? inc.fullName ?? inc.timebaseId ?? "?");
-        } else tally(c, res, inc.email ?? inc.fullName ?? "record");
+          unmatched.push((inc.email as string) ?? (inc.fullName as string) ?? (inc.timebaseId as string) ?? "?");
+        } else tally(c, res, (inc.email as string) ?? (inc.fullName as string) ?? "record");
       }
       const next = getPath(json, "next") ?? getPath(json, "links.next") ?? getPath(json, "meta.next");
       url = typeof next === "string" && next ? (next.startsWith("http") ? next : `${base}${next}`) : null;

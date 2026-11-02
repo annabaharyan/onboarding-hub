@@ -102,7 +102,7 @@ export const leapsome: Connector = {
             c.skipped++;
             continue;
           }
-          tally(c, await writer.apply(inc, { source: "leapsome", syncRunId: runId }), inc.email ?? inc.leapsomeId ?? "user");
+          tally(c, await writer.apply(inc, { source: "leapsome", syncRunId: runId }), (inc.email as string) ?? (inc.leapsomeId as string) ?? "user");
         } catch (e) {
           c.skipped++;
           c.errors.push(`Leapsome user ${getPath(u, "id")}: ${(e as Error).message}`);
