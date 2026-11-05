@@ -5,7 +5,6 @@ import { Card, Empty, PageHeader, Skeleton, btn } from "@/components/ui";
 import { FilterBar } from "@/components/filters";
 import { NewEmployee } from "./new-employee";
 import { EmployeeTable } from "./employee-table";
-import { DeleteAllButton } from "./delete-all-button";
 import { filterOptions, filtersToSearch, listEmployees, parseFilters } from "@/lib/queries";
 import { DEFAULT_COLUMNS, type EmployeeField } from "@/lib/fields";
 import { QUALITY_SQL } from "@/lib/insights";
@@ -75,7 +74,6 @@ async function EmployeesView({ searchParams }: { searchParams: SP }) {
             <a href={`/api/export?${qs}`} className={btn.secondary}>
               ⬇ Export these to Excel
             </a>
-            <DeleteAllButton qs={qs} count={total} filtered={Boolean(qs)} />
           </div>
         }
       >

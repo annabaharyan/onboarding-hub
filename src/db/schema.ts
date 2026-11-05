@@ -73,6 +73,19 @@ export const validationStatus = pgEnum("validation_status", [
   "error",
 ]);
 
+/** Where an onboarding request is in the process (see docs/onboarding-flow.md). */
+export const requestStage = pgEnum("request_stage", [
+  "new",
+  "pre_onboarding",
+  "collecting",
+  "needs_info",
+  "ready_for_review",
+  "approved",
+  "first_day",
+  "completed",
+  "cancelled",
+]);
+
 export const employees = pgTable(
   "employees",
   {
@@ -174,6 +187,10 @@ export const employeeChanges = pgTable(
   (t) => [index("changes_emp_idx").on(t.employeeId), index("changes_at_idx").on(t.changedAt)],
 );
 
+/** Request fields the team can correct. Jira values stay in the columns; corrections win. */
+export type RequestCorrections = Partial<Record<"fullName" | "email" | "startDate" | "businessUnit" | "jobTitle" | "location" | "manager", string | null>>;
+export type PendingChanges = Record<string, { from: string | null; to: string | null; detectedAt: string }>;
+
 export const onboardingRequests = pgTable(
   "onboarding_requests",
   {
@@ -196,11 +213,93 @@ export const onboardingRequests = pgTable(
     commentedAt: timestamp("commented_at", { withTimezone: true }),
     employeeId: integer("employee_id").references(() => employees.id, { onDelete: "set null" }),
     jiraCreatedAt: timestamp("jira_created_at", { withTimezone: true }),
+    /** Process stage in the Hub. */
+    stage: requestStage("stage").notNull().default("new"),
+    stageChangedAt: timestamp("stage_changed_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Team corrections — never overwritten by sync. */
+    corrections: jsonb("corrections").$type<RequestCorrections>().notNull().default({}),
+    /** Day information collection starts. Suggested from the start date unless set by hand. */
+    collectionDate: date("collection_date"),
+    collectionDateOverridden: boolean("collection_date_overridden").notNull().default(false),
+    /** Jira changes detected after approval, waiting for the team to accept or dismiss. */
+    pendingChanges: jsonb("pending_changes").$type<PendingChanges>().notNull().default({}),
+    /** Last Jira write that failed (status change or comment) — shown with a retry button. */
+    jiraError: text("jira_error"),
+    /** Fingerprint of the last "missing info" comment, so the same request isn't posted twice. */
+    lastCommentKey: text("last_comment_key"),
+    contactedAt: timestamp("contacted_at", { withTimezone: true }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    firstDayAt: timestamp("first_day_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelReason: text("cancel_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("onb_jira_uq").on(t.jiraKey)],
+  (t) => [uniqueIndex("onb_jira_uq").on(t.jiraKey), index("onb_stage_idx").on(t.stage), index("onb_collection_idx").on(t.collectionDate)],
 );
+
+/** First-day checklist items every new hire gets. Editable on the Onboarding page. */
+export const checklistTemplates = pgTable("checklist_templates", {
+  id: serial("id").primaryKey(),
+  label: text("label").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  /** Who ticks it: "manual" today; "google_drive" / "timebase" reserved for automatic checks later. */
+  source: text("source").notNull().default("manual"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const requestChecklistItems = pgTable(
+  "request_checklist_items",
+  {
+    id: serial("id").primaryKey(),
+    requestId: integer("request_id")
+      .notNull()
+      .references(() => onboardingRequests.id, { onDelete: "cascade" }),
+    templateId: integer("template_id").references(() => checklistTemplates.id, { onDelete: "set null" }),
+    /** Copied from the template so renaming a template doesn't rewrite history. */
+    label: text("label").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    done: boolean("done").notNull().default(false),
+    doneAt: timestamp("done_at", { withTimezone: true }),
+    doneBy: text("done_by"),
+  },
+  (t) => [index("checklist_request_idx").on(t.requestId), uniqueIndex("checklist_request_template_uq").on(t.requestId, t.templateId)],
+);
+
+/** Timeline of everything that happened to a request (stage changes, corrections, Jira writes, ticks). */
+export const requestEvents = pgTable(
+  "request_events",
+  {
+    id: serial("id").primaryKey(),
+    requestId: integer("request_id")
+      .notNull()
+      .references(() => onboardingRequests.id, { onDelete: "cascade" }),
+    type: text("type").notNull(), // stage | correction | jira | checklist | change | note
+    fromStage: requestStage("from_stage"),
+    toStage: requestStage("to_stage"),
+    message: text("message"),
+    actor: text("actor").notNull().default("system"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("request_events_request_idx").on(t.requestId, t.at)],
+);
+
+/**
+ * Stand-in for Jira while no real credentials are configured (JIRA_MODE=mock).
+ * Holds dummy tickets, their status and the comments the Hub posted.
+ */
+export const mockJiraIssues = pgTable("mock_jira_issues", {
+  key: text("key").primaryKey(),
+  summary: text("summary").notNull(),
+  description: text("description").notNull().default(""),
+  status: text("status").notNull(),
+  reporter: text("reporter"),
+  comments: jsonb("comments").$type<{ body: string; at: string }[]>().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const syncRuns = pgTable(
   "sync_runs",
@@ -341,6 +440,10 @@ export type ImportIssue = { row: number; level: "error" | "warning"; message: st
 export type Employee = typeof employees.$inferSelect;
 export type NewEmployee = typeof employees.$inferInsert;
 export type OnboardingRequest = typeof onboardingRequests.$inferSelect;
+export type RequestStage = (typeof requestStage.enumValues)[number];
+export type RequestChecklistItem = typeof requestChecklistItems.$inferSelect;
+export type RequestEvent = typeof requestEvents.$inferSelect;
+export type ChecklistTemplate = typeof checklistTemplates.$inferSelect;
 export type SyncRun = typeof syncRuns.$inferSelect;
 export type ProbationReview = typeof probationReviews.$inferSelect;
 export type ProbationFeedback = typeof probationFeedback.$inferSelect;

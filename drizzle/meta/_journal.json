@@ -71,6 +71,13 @@
       "when": 1793620177124,
       "tag": "0009_add_climate_survey",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793879197310,
+      "tag": "0010_onboarding_stages",
+      "breakpoints": true
     }
   ]
 }

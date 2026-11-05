@@ -4,6 +4,7 @@ import { Badge, Card, PageHeader, Skeleton, SyncBadge, fmtDateTime } from "@/com
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { CONNECTORS, defaultSources, lastRuns, latestRunPerSource } from "@/lib/sync";
 import { claudeConfigured } from "@/lib/integrations/claude";
+import { jiraMode } from "@/lib/integrations/jira-client";
 import { SOURCE_OWNERSHIP, FIELD_MAP } from "@/lib/fields";
 import { syncClimateSurveyNow, syncNow, testConnection } from "../actions";
 import { missingConfig as climateSurveyMissingConfig } from "@/lib/climate-survey";
@@ -44,10 +45,15 @@ async function Body() {
           return (
             <Card
               key={c.id}
-              title={<span className="flex items-center gap-2">{c.label} {missing.length ? <Badge tone="gray">Not configured</Badge> : <Badge tone="green">Configured</Badge>}</span>}
+              title={<span className="flex items-center gap-2">{c.label} {missing.length ? <Badge tone="gray">Not configured</Badge> : c.id === "jira" && jiraMode() === "mock" ? <Badge tone="blue">Demo mode</Badge> : <Badge tone="green">Configured</Badge>}</span>}
               actions={<SyncBadge status={l?.status} />}
             >
               <p className="text-sm text-muted">{c.description}</p>
+              {c.id === "jira" && jiraMode() === "mock" && (
+                <p className="mt-3 rounded-md bg-violet-50 px-3 py-2 text-xs text-violet-900">
+                  Demo mode: using dummy tickets stored in the app. To connect real Jira, set <code>JIRA_BASE_URL</code>, <code>JIRA_EMAIL</code>, <code>JIRA_API_TOKEN</code> and <code>JIRA_MODE=live</code>.
+                </p>
+              )}
               {l && (
                 <p className="mt-3 text-xs text-muted">
                   Last run {fmtDateTime(l.startedAt)} — {l.fetched} fetched, {l.created} new, {l.updated} updated
