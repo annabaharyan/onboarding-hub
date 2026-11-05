@@ -3,17 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { employees, employeeChanges, onboardingRequests, onboardingSurveys, orgUnits, probationFeedback, probationReviews } from "@/db/schema";
+import { employees, employeeChanges, onboardingSurveys, orgUnits, probationFeedback, probationReviews } from "@/db/schema";
 import { SESSION_COOKIE, createSessionToken, passwordMatches, sessionCookieOptions } from "@/lib/auth";
 import { CONNECTORS, defaultSources, runSync } from "@/lib/sync";
 import { EmployeeWriter, type Incoming } from "@/lib/employee-writer";
 import { FIELDS, type EmployeeField } from "@/lib/fields";
-import { buildWhere, parseFilters } from "@/lib/queries";
 import { cleanEmail, cleanText, parseBoolean, parseCareerTrack, parseDate, parseOffboardingReason, parseStatus, todayIso } from "@/lib/normalize";
 import { claudeConfigured, testClaude } from "@/lib/integrations/claude";
-import { fetchIssue, processIssue } from "@/lib/integrations/jira";
 import type { ConnectorId } from "@/lib/integrations/types";
 import { runClimateSurveySync, testConnection as testClimateSurveySheet } from "@/lib/climate-survey";
 
@@ -129,34 +127,6 @@ export async function updateEmployee(_: ActionState, form: FormData): Promise<Ac
   return { ok: true, message: n ? `Saved ${n} change(s). Edited fields are now locked from sync overwrites.` : "No changes." };
 }
 
-/** Deletes a single employee (called directly from a client component, not a <form>). */
-export async function deleteEmployee(id: number) {
-  const db = getDb();
-  await db.delete(employees).where(eq(employees.id, id));
-  revalidatePath("/employees");
-  revalidatePath("/");
-}
-
-/** Bulk-deletes the employees whose ids were checked in the list view. */
-export async function deleteEmployees(ids: number[]) {
-  const clean = ids.filter((n) => Number.isInteger(n));
-  if (!clean.length) return;
-  const db = getDb();
-  await db.delete(employees).where(inArray(employees.id, clean));
-  revalidatePath("/employees");
-  revalidatePath("/");
-}
-
-/** Deletes every employee matching the current list filters (all employees if none are applied) — mirrors what "Export these to Excel" exports. */
-export async function deleteAllEmployees(qs: string) {
-  const f = parseFilters(new URLSearchParams(qs));
-  const where = buildWhere(f);
-  const db = getDb();
-  await db.delete(employees).where(where);
-  revalidatePath("/employees");
-  revalidatePath("/");
-}
-
 export async function unlockField(form: FormData) {
   const id = Number(form.get("id"));
   const field = String(form.get("field"));
@@ -182,27 +152,6 @@ export async function createEmployee(_: ActionState, form: FormData): Promise<Ac
   const res = await writer.apply(inc, { source: "manual", changedBy: "web" });
   revalidatePath("/employees");
   redirect(`/employees/${res.employeeId}`);
-}
-
-export async function revalidateTicket(form: FormData) {
-  const key = String(form.get("key"));
-  const issue = await fetchIssue(key);
-  await processIssue(issue, { force: true });
-  revalidatePath("/onboarding");
-}
-
-export async function linkTicketToNewEmployee(form: FormData) {
-  const id = Number(form.get("id"));
-  const db = getDb();
-  const [t] = await db.select().from(onboardingRequests).where(eq(onboardingRequests.id, id));
-  if (!t || !t.fullName) return;
-  const writer = await EmployeeWriter.create();
-  const res = await writer.apply(
-    { fullName: t.fullName, email: t.email, startDate: t.startDate, businessUnit: t.businessUnit, jobTitle: t.jobTitle, location: t.location, manager: t.manager, jiraKey: t.jiraKey, status: "pre_onboarding" },
-    { source: "jira", changedBy: "web" },
-  );
-  if (res.employeeId) await db.update(onboardingRequests).set({ employeeId: res.employeeId }).where(eq(onboardingRequests.id, id));
-  revalidatePath("/onboarding");
 }
 
 /** Opens a new probation review cycle for an employee, snapshotting the current probation end date as the due date. */

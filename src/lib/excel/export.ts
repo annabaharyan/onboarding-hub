@@ -2,6 +2,8 @@ import ExcelJS from "exceljs";
 import { and, asc, gte, inArray, lte, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { employees, monthlySnapshots, onboardingRequests, employeeChanges } from "@/db/schema";
+import { effective } from "../onboarding/engine";
+import { STAGE_META } from "../onboarding/stages";
 import { CAREER_TRACK_LABEL, FIELD_MAP, OFFBOARDING_REASON_LABEL, STATUS_LABEL, type CareerTrack, type EmployeeField, type OffboardingReason, type Status } from "../fields";
 import { buildWhere, type EmployeeFilters } from "../queries";
 
@@ -161,13 +163,16 @@ export async function buildExport(filters: EmployeeFilters, opts: ExportOptions)
     const ob = await db.select().from(onboardingRequests).orderBy(asc(onboardingRequests.startDate));
     const os = wb.addWorksheet("Onboarding requests");
     os.columns = [
-      { header: "Jira", key: "jiraKey" }, { header: "Jira status", key: "jiraStatus" }, { header: "Name", key: "fullName" },
+      { header: "Jira", key: "jiraKey" }, { header: "Stage", key: "stageLabel" }, { header: "Jira status", key: "jiraStatus" }, { header: "Name", key: "fullName" },
       { header: "Email", key: "email" }, { header: "Start date", key: "startDate" }, { header: "Business unit", key: "businessUnit" },
       { header: "Job title", key: "jobTitle" }, { header: "Location", key: "location" }, { header: "Manager", key: "manager" },
+      { header: "Collection date", key: "collectionDate" },
       { header: "Validation", key: "validationStatus" }, { header: "Missing", key: "missing" }, { header: "Notes", key: "validationNotes" },
     ];
-    ob.forEach((o) => os.addRow({ ...o, startDate: toDate(o.startDate), missing: o.missingFields.join(", ") }));
-    os.getColumn(5).numFmt = "dd.mm.yyyy";
+    // Team corrections win over the Jira values, as everywhere else in the app
+    ob.forEach((o) => os.addRow({ ...o, ...effective(o), stageLabel: STAGE_META[o.stage].label, startDate: toDate(effective(o).startDate), collectionDate: toDate(o.collectionDate), missing: o.missingFields.join(", ") }));
+    os.getColumn(6).numFmt = "dd.mm.yyyy";
+    os.getColumn(11).numFmt = "dd.mm.yyyy";
     styleHeader(os);
     autoWidth(os);
   }

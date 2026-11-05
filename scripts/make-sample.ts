@@ -1,4 +1,7 @@
-/** Generates samples/sample-headcount.xlsx — a deliberately messy file shaped like the real headcount file. */
+/**
+ * Generates samples/sample-headcount.xlsx — a deliberately messy file shaped like the real headcount file.
+ * All names, emails and IDs are fictional — never put real people in sample data.
+ */
 import ExcelJS from "exceljs";
 import { mkdirSync } from "node:fs";
 

@@ -1,35 +1,22 @@
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { onboardingRequests } from "@/db/schema";
+import { onboardingRequests, requestEvents, type PendingChanges } from "@/db/schema";
 import { FIELDS, FIELD_MAP, type EmployeeField } from "../fields";
 import { cleanEmail, cleanText, getPath, normHeader, parseDate, safeJson, todayIso } from "../normalize";
-import type { Incoming } from "../employee-writer";
-import { fetchJson } from "./http";
+import { advanceAll } from "../onboarding/engine";
+import { REQUEST_FIELDS, fieldLabel } from "../onboarding/stages";
 import { claudeConfigured, validateTicketWithClaude } from "./claude";
-import { emptyCounts, tally, type Connector, type SyncCounts } from "./types";
+import { getJiraClient, jiraMode, type JiraIssue } from "./jira-client";
+import { emptyCounts, type Connector, type SyncCounts } from "./types";
 
 const env = () => ({
-  base: (process.env.JIRA_BASE_URL || "").replace(/\/$/, ""),
-  email: process.env.JIRA_EMAIL,
-  token: process.env.JIRA_API_TOKEN,
-  jql: process.env.JIRA_ONBOARDING_JQL || 'issuetype = "Onboarding" AND updated >= -7d ORDER BY created DESC',
   fieldMap: safeJson<Partial<Record<EmployeeField, string>>>(process.env.JIRA_FIELD_MAP, {}),
   required: (process.env.JIRA_REQUIRED_FIELDS || "fullName,email,startDate,businessUnit,jobTitle,location,manager")
     .split(",")
     .map((s) => s.trim())
     .filter((s): s is EmployeeField => s in FIELD_MAP),
-  comment: process.env.JIRA_COMMENT_ON_MISSING === "true",
 });
-
-const authHeaders = () => {
-  const { email, token } = env();
-  return {
-    Authorization: `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`,
-    Accept: "application/json",
-    "Content-Type": "application/json",
-  };
-};
 
 /** Atlassian Document Format → plain text. */
 export function adfToText(node: unknown): string {
@@ -67,24 +54,6 @@ function fieldValue(v: unknown): string | null {
   return cleanText(v);
 }
 
-type JiraIssue = { key: string; fields: Record<string, unknown> };
-
-async function* searchIssues(): AsyncGenerator<JiraIssue> {
-  const { base, jql, fieldMap } = env();
-  const fields = ["summary", "description", "status", "reporter", "created", "updated", ...Object.values(fieldMap)];
-  let nextPageToken: string | undefined;
-  let guard = 0;
-  do {
-    const json = await fetchJson<{ issues: JiraIssue[]; nextPageToken?: string; isLast?: boolean }>(`${base}/rest/api/3/search/jql`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ jql, fields, maxResults: 100, nextPageToken }),
-    });
-    for (const i of json.issues ?? []) yield i;
-    nextPageToken = json.isLast ? undefined : json.nextPageToken;
-  } while (nextPageToken && guard++ < 100);
-}
-
 function normalise(fields: Partial<Record<EmployeeField, string | null>>): Partial<Record<EmployeeField, string | null>> {
   const out: Partial<Record<EmployeeField, string | null>> = {};
   for (const [k, v] of Object.entries(fields) as [EmployeeField, string | null][]) {
@@ -96,25 +65,17 @@ function normalise(fields: Partial<Record<EmployeeField, string | null>>): Parti
   return out;
 }
 
-async function postComment(key: string, lines: string[]) {
-  const { base } = env();
-  const appUrl = process.env.APP_URL;
-  const body = {
-    type: "doc",
-    version: 1,
-    content: [
-      { type: "paragraph", content: [{ type: "text", text: "Onboarding Hub: this request is missing information needed to start onboarding:" }] },
-      { type: "bulletList", content: lines.map((l) => ({ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: l }] }] })) },
-      ...(appUrl ? [{ type: "paragraph", content: [{ type: "text", text: "Questions? Contact HR Operations." }] }] : []),
-    ],
-  };
-  await fetchJson(`${base}/rest/api/3/issue/${encodeURIComponent(key)}/comment`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ body }) });
-}
+const AFTER_APPROVAL = ["approved", "first_day", "completed"];
 
-/** Validates one ticket (rules + optional Claude) and stores it. Returns the merged record. */
+/**
+ * Validates one ticket (rules + optional Claude) and stores it as an onboarding request.
+ * Never changes the request's stage or the team's corrections. Comments to the requester and
+ * stage changes are handled by the onboarding engine. Changes to an already-approved request
+ * are recorded as pending changes for the team to accept or dismiss.
+ */
 export async function processIssue(issue: JiraIssue, opts: { force?: boolean } = {}) {
   const db = getDb();
-  const { fieldMap, required, comment } = env();
+  const { fieldMap, required } = env();
   const f = issue.fields;
   const summary = cleanText(f.summary) ?? "";
   const description = adfToText(f.description).trim();
@@ -134,7 +95,6 @@ export async function processIssue(issue: JiraIssue, opts: { force?: boolean } =
   let missing = required.filter((r) => !merged[r]);
   let notes: string[] = [];
   let status: "valid" | "missing_info" | "error" = missing.length ? "missing_info" : "valid";
-  let aiComment = "";
 
   if (unchanged) {
     // Nothing changed since last validation — don't spend API calls again
@@ -149,7 +109,6 @@ export async function processIssue(issue: JiraIssue, opts: { force?: boolean } =
       merged = { ...normalise(v.fields), ...Object.fromEntries(Object.entries(merged).filter(([, x]) => x)) };
       missing = required.filter((r) => !merged[r]);
       notes = v.problems;
-      aiComment = v.comment;
       status = missing.length || v.problems.length ? "missing_info" : "valid";
     } catch (e) {
       notes = [`Claude validation failed: ${(e as Error).message}. Rule-based check used.`];
@@ -175,70 +134,69 @@ export async function processIssue(issue: JiraIssue, opts: { force?: boolean } =
     jiraCreatedAt: f.created ? new Date(String(f.created)) : null,
     updatedAt: new Date(),
   };
+
+  // After approval, Jira edits don't silently change the employee: record them for review
+  let pendingChanges: PendingChanges | undefined;
+  const detected: string[] = [];
+  if (existing && !unchanged && AFTER_APPROVAL.includes(existing.stage)) {
+    pendingChanges = { ...existing.pendingChanges };
+    for (const { key } of REQUEST_FIELDS) {
+      const before = (existing[key] as string | null) ?? null;
+      const after = (values[key] as string | null) ?? null;
+      if (before === after || key in existing.corrections) continue;
+      pendingChanges[key] = { from: pendingChanges[key]?.from ?? before, to: after, detectedAt: new Date().toISOString() };
+      if (pendingChanges[key].from === after) delete pendingChanges[key];
+      else detected.push(`${fieldLabel(key)}: ${before ?? "empty"} → ${after ?? "empty"}`);
+    }
+  }
+
   const [row] = await db
     .insert(onboardingRequests)
     .values(values)
-    .onConflictDoUpdate({ target: onboardingRequests.jiraKey, set: values })
+    .onConflictDoUpdate({ target: onboardingRequests.jiraKey, set: pendingChanges ? { ...values, pendingChanges } : values })
     .returning();
-
-  // Ask the reporter for missing info — once per ticket version
-  if (comment && status === "missing_info" && !unchanged) {
-    const lines = aiComment
-      ? aiComment.split("\n").map((l) => l.replace(/^\s*[-*•]\s*/, "").trim()).filter(Boolean)
-      : missing.map((m) => `${FIELD_MAP[m].label} is missing`);
-    try {
-      await postComment(issue.key, lines);
-      await db.update(onboardingRequests).set({ commentedAt: new Date() }).where(eq(onboardingRequests.id, row.id));
-    } catch (e) {
-      notes.push(`Could not comment on Jira: ${(e as Error).message}`);
-    }
-  }
-  return { row, merged: { ...merged, jiraKey: issue.key } as Incoming };
+  if (!existing) await db.insert(requestEvents).values({ requestId: row.id, type: "stage", toStage: "new", message: `Ticket ${issue.key} received from Jira` });
+  if (detected.length) await db.insert(requestEvents).values({ requestId: row.id, type: "change", message: `Jira changed after approval — ${detected.join("; ")}` });
+  return { row, created: !existing, changed: Boolean(existing && !unchanged) };
 }
 
 export async function fetchIssue(key: string): Promise<JiraIssue> {
-  const { base, fieldMap } = env();
-  const fields = ["summary", "description", "status", "reporter", "created", ...Object.values(fieldMap)].join(",");
-  return fetchJson<JiraIssue>(`${base}/rest/api/3/issue/${encodeURIComponent(key)}?fields=${fields}`, { headers: authHeaders() });
+  return getJiraClient().get(key);
 }
 
 export const jira: Connector = {
   id: "jira",
   label: "Jira",
-  description: "Onboarding requests. Tickets are validated (Claude, if configured) and new joiners are added as pre-onboarding.",
-  envVars: ["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "JIRA_ONBOARDING_JQL", "JIRA_FIELD_MAP", "JIRA_REQUIRED_FIELDS"],
+  description:
+    "Onboarding requests. New tickets appear on the Onboarding page as new requests; the Hub moves the ticket to Work in progress when the employee is contacted and to Done when onboarding is complete.",
+  envVars: ["JIRA_BASE_URL", "JIRA_EMAIL", "JIRA_API_TOKEN", "JIRA_ONBOARDING_JQL", "JIRA_FIELD_MAP", "JIRA_REQUIRED_FIELDS", "JIRA_MODE"],
   missingConfig() {
-    const e = env();
-    return [!e.base && "JIRA_BASE_URL", !e.email && "JIRA_EMAIL", !e.token && "JIRA_API_TOKEN"].filter(Boolean) as string[];
+    if (jiraMode() === "mock") return [];
+    const base = process.env.JIRA_BASE_URL;
+    return [!base && "JIRA_BASE_URL", !process.env.JIRA_EMAIL && "JIRA_EMAIL", !process.env.JIRA_API_TOKEN && "JIRA_API_TOKEN"].filter(Boolean) as string[];
   },
   async test() {
-    const { base } = env();
-    const me = await fetchJson<{ displayName: string }>(`${base}/rest/api/3/myself`, { headers: authHeaders(), retries: 0 });
-    return `Connected as ${me.displayName}.`;
+    return getJiraClient().whoami();
   },
-  async sync({ writer, runId }) {
+  async sync() {
     const c: SyncCounts = emptyCounts();
-    let invalid = 0;
-    for await (const issue of searchIssues()) {
+    for await (const issue of getJiraClient().search()) {
       c.fetched++;
       try {
-        const { row, merged } = await processIssue(issue);
-        if (row.validationStatus === "missing_info") invalid++;
-        // Only create/link an employee when we can identify the person reliably
-        if (!merged.fullName || (!merged.email && !merged.startDate)) {
-          c.skipped++;
-          continue;
-        }
-        const res = await writer.apply({ ...merged, status: "pre_onboarding" }, { source: "jira", syncRunId: runId });
-        tally(c, res, issue.key);
-        if (res.employeeId && res.employeeId > 0 && row.employeeId !== res.employeeId)
-          await getDb().update(onboardingRequests).set({ employeeId: res.employeeId }).where(eq(onboardingRequests.id, row.id));
+        const res = await processIssue(issue);
+        if (res.created) c.created++;
+        else if (res.changed) c.updated++;
+        else c.unchanged++;
       } catch (e) {
         c.skipped++;
         c.errors.push(`${issue.key}: ${(e as Error).message}`);
       }
     }
-    c.message = invalid ? `${invalid} ticket(s) missing information` : undefined;
+    // Date-driven steps: collection dates reached, first days, completed checklists
+    const adv = await advanceAll();
+    c.errors.push(...adv.errors);
+    const parts = [jiraMode() === "mock" ? "Demo mode (dummy tickets)" : null, adv.moved ? `${adv.moved} request(s) moved to the next stage` : null].filter(Boolean);
+    c.message = parts.join(" · ") || undefined;
     return c;
   },
 };
